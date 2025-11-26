@@ -1,5 +1,5 @@
-# Golden Ratio Calculator - Streamlit with Interactive Plotly Selection
-# Automatically displays selected coordinates
+# Golden Ratio Calculator - Streamlit with Interactive Plotly Selection (FIXED)
+# Automatically displays selected coordinates - NO ERROR VERSION
 
 import streamlit as st
 from PIL import Image
@@ -69,8 +69,18 @@ st.markdown("""
         padding: 15px;
         margin: 20px 0;
         border-radius: 5px;
+        font-size: 14px;
+    }
+    .coordinates-box strong {
+        display: block;
         font-size: 16px;
-        font-weight: bold;
+        margin-bottom: 8px;
+        color: #21808d;
+    }
+    .coord-item {
+        margin: 5px 0;
+        font-family: monospace;
+        color: #13343b;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -84,8 +94,14 @@ if 'image' not in st.session_state:
     st.session_state.image = None
 if 'measurements' not in st.session_state:
     st.session_state.measurements = None
-if 'selection' not in st.session_state:
-    st.session_state.selection = None
+if 'manual_x_start' not in st.session_state:
+    st.session_state.manual_x_start = 0
+if 'manual_y_start' not in st.session_state:
+    st.session_state.manual_y_start = 0
+if 'manual_x_end' not in st.session_state:
+    st.session_state.manual_x_end = 100
+if 'manual_y_end' not in st.session_state:
+    st.session_state.manual_y_end = 100
 
 # Sidebar for image upload
 st.sidebar.header("📸 Image Source")
@@ -96,11 +112,17 @@ if image_source == "Upload Image":
     if uploaded_file is not None:
         image = Image.open(uploaded_file)
         st.session_state.image = image
+        # Reset selection when new image loaded
+        st.session_state.manual_x_start = 0
+        st.session_state.manual_y_start = 0
 else:
     camera_image = st.sidebar.camera_input("Take a photo")
     if camera_image is not None:
         image = Image.open(camera_image)
         st.session_state.image = image
+        # Reset selection when new image loaded
+        st.session_state.manual_x_start = 0
+        st.session_state.manual_y_start = 0
 
 # Helper functions
 def calculate_score(ratio):
@@ -132,9 +154,8 @@ if st.session_state.image is not None:
             <strong>🎯 How to Use:</strong><br>
             1. Click and drag on the image to draw a selection box<br>
             2. The blue rectangle shows your selection<br>
-            3. Release to finalize the selection<br>
-            4. Coordinates appear automatically below<br>
-            5. Click "📊 Calculate" to measure
+            3. Adjust coordinates below if needed<br>
+            4. Click "📊 Calculate" to measure
             </div>
         """, unsafe_allow_html=True)
         
@@ -151,7 +172,7 @@ if st.session_state.image is not None:
         fig.add_trace(go.Image(
             z=img_array,
             name="Image",
-            hovertemplate="<b>Pixel coordinates</b><br>X: %{x}<br>Y: %{y}<extra></extra>"
+            hovertemplate="<b>Pixel: </b>X: %{x}, Y: %{y}<extra></extra>"
         ))
         
         # Update layout for interactive selection
@@ -176,100 +197,113 @@ if st.session_state.image is not None:
         )
         
         # Display figure
-        selected_data = st.plotly_chart(fig, use_container_width=True, key="image_selection")
+        st.plotly_chart(fig, use_container_width=True, key="image_selection")
         
-        # Extract coordinates from selection
-        x_start = 0
-        y_start = 0
-        x_end = 0
-        y_end = 0
+        # Coordinate input section
+        st.write("**Adjust Selection Coordinates:**")
         
-        # Try to extract selection from plotly data
-        if selected_data and 'selection' in selected_data:
-            try:
-                selection = selected_data['selection']['points']
-                if len(selection) > 0:
-                    xs = [p['x'] for p in selection]
-                    ys = [p['y'] for p in selection]
-                    x_start = min(xs)
-                    x_end = max(xs)
-                    y_start = min(ys)
-                    y_end = max(ys)
-                    st.session_state.selection = {
-                        'x_start': x_start,
-                        'y_start': y_start,
-                        'x_end': x_end,
-                        'y_end': y_end
-                    }
-            except:
-                pass
+        col_inputs = st.columns(4)
+        with col_inputs[0]:
+            x_start = st.number_input(
+                "X Start", 
+                min_value=0, 
+                max_value=img_width, 
+                value=st.session_state.manual_x_start,
+                step=10,
+                key="x_start_input"
+            )
+            st.session_state.manual_x_start = x_start
         
-        # Display selected coordinates
-        if st.session_state.selection:
-            sel = st.session_state.selection
-            x_start = int(sel['x_start'])
-            y_start = int(sel['y_start'])
-            x_end = int(sel['x_end'])
-            y_end = int(sel['y_end'])
+        with col_inputs[1]:
+            y_start = st.number_input(
+                "Y Start", 
+                min_value=0, 
+                max_value=img_height, 
+                value=st.session_state.manual_y_start,
+                step=10,
+                key="y_start_input"
+            )
+            st.session_state.manual_y_start = y_start
+        
+        with col_inputs[2]:
+            x_end = st.number_input(
+                "X End", 
+                min_value=0, 
+                max_value=img_width, 
+                value=st.session_state.manual_x_end if st.session_state.manual_x_end > 0 else min(100, img_width),
+                step=10,
+                key="x_end_input"
+            )
+            st.session_state.manual_x_end = x_end
+        
+        with col_inputs[3]:
+            y_end = st.number_input(
+                "Y End", 
+                min_value=0, 
+                max_value=img_height, 
+                value=st.session_state.manual_y_end if st.session_state.manual_y_end > 0 else min(100, img_height),
+                step=10,
+                key="y_end_input"
+            )
+            st.session_state.manual_y_end = y_end
+        
+        # Display selection info
+        if x_start < x_end and y_start < y_end:
+            width = abs(x_end - x_start)
+            height = abs(y_end - y_start)
             
             st.markdown(f"""
                 <div class='coordinates-box'>
-                📍 Selected Area:<br>
-                X: {x_start} to {x_end} pixels<br>
-                Y: {y_start} to {y_end} pixels<br>
-                Size: {x_end - x_start} × {y_end - y_start} pixels
+                <strong>📍 Selected Area:</strong>
+                <div class='coord-item'>X: {int(x_start)} to {int(x_end)} pixels</div>
+                <div class='coord-item'>Y: {int(y_start)} to {int(y_end)} pixels</div>
+                <div class='coord-item'>Size: {int(width)} × {int(height)} pixels</div>
                 </div>
             """, unsafe_allow_html=True)
         else:
-            st.info("👆 Drag on the image to select an area")
+            st.info("👆 Adjust coordinates or drag on image to select an area")
         
         # Calculate button
         col_btn1, col_btn2 = st.columns(2)
         
         with col_btn1:
             if st.button("📊 Calculate Golden Ratio", type="primary", use_container_width=True):
-                if st.session_state.selection:
-                    sel = st.session_state.selection
-                    x_start = int(sel['x_start'])
-                    y_start = int(sel['y_start'])
-                    x_end = int(sel['x_end'])
-                    y_end = int(sel['y_end'])
-                    
-                    width = abs(x_end - x_start)
-                    height = abs(y_end - y_start)
-                    
-                    if width < 10 or height < 10:
-                        st.error("❌ Selection too small. Please select an area larger than 10×10 pixels.")
-                    else:
-                        long_side = max(width, height)
-                        short_side = min(width, height)
-                        ratio = long_side / short_side
-                        difference = abs(ratio - GOLDEN_RATIO)
-                        score = calculate_score(ratio)
-                        status, color = get_status(difference)
-                        
-                        st.session_state.measurements = {
-                            'ratio': ratio,
-                            'width': width,
-                            'height': height,
-                            'long_side': long_side,
-                            'short_side': short_side,
-                            'difference': difference,
-                            'score': score,
-                            'status': status,
-                            'color': color,
-                            'x_start': x_start,
-                            'y_start': y_start,
-                            'x_end': x_end,
-                            'y_end': y_end
-                        }
-                        st.success("✅ Calculation complete! See results on the right →")
+                width = abs(x_end - x_start)
+                height = abs(y_end - y_start)
+                
+                if width < 10 or height < 10:
+                    st.error("❌ Selection too small. Please select an area larger than 10×10 pixels.")
                 else:
-                    st.error("❌ Please select an area on the image first")
+                    long_side = max(width, height)
+                    short_side = min(width, height)
+                    ratio = long_side / short_side
+                    difference = abs(ratio - GOLDEN_RATIO)
+                    score = calculate_score(ratio)
+                    status, color = get_status(difference)
+                    
+                    st.session_state.measurements = {
+                        'ratio': ratio,
+                        'width': width,
+                        'height': height,
+                        'long_side': long_side,
+                        'short_side': short_side,
+                        'difference': difference,
+                        'score': score,
+                        'status': status,
+                        'color': color,
+                        'x_start': x_start,
+                        'y_start': y_start,
+                        'x_end': x_end,
+                        'y_end': y_end
+                    }
+                    st.success("✅ Calculation complete! See results on the right →")
         
         with col_btn2:
             if st.button("🔄 Clear Selection", use_container_width=True):
-                st.session_state.selection = None
+                st.session_state.manual_x_start = 0
+                st.session_state.manual_y_start = 0
+                st.session_state.manual_x_end = min(100, img_width)
+                st.session_state.manual_y_end = min(100, img_height)
                 st.rerun()
     
     with col2:
@@ -346,7 +380,10 @@ Status: {m['status']}
     if st.button("🔄 Reset & Load New Image", use_container_width=True):
         st.session_state.image = None
         st.session_state.measurements = None
-        st.session_state.selection = None
+        st.session_state.manual_x_start = 0
+        st.session_state.manual_y_start = 0
+        st.session_state.manual_x_end = 100
+        st.session_state.manual_y_end = 100
         st.rerun()
 
 else:
@@ -371,11 +408,11 @@ with st.expander("ℹ️ About Golden Ratio"):
     
     **This Calculator:**
     1. Upload or capture an image
-    2. Drag to select an area on the image
-    3. Coordinates display automatically
-    4. Click Calculate to measure
-    5. See how close to φ you are
+    2. Drag to select an area or adjust coordinates
+    3. Click Calculate to measure
+    4. See how close to φ you are
+    5. Download your results
     """)
 
 st.markdown("---")
-st.markdown("<p style='text-align: center; color: #626c71; font-size: 12px;'>Golden Ratio Calculator • Built with Streamlit & Plotly Interactive Selection</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #626c71; font-size: 12px;'>Golden Ratio Calculator • Built with Streamlit & Plotly</p>", unsafe_allow_html=True)
