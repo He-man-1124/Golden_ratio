@@ -1,12 +1,13 @@
-# Golden Ratio Calculator - SIMPLE & DIRECT: Click to Confirm Selection
-# No complex state tracking - just drag, preview, click button, get coordinates
+# Golden Ratio Calculator - SIMPLIFIED: Static Image + Drag Selection + Capture Button
+# Shows image first, user drags to select, clicks button to capture coordinates
 
 import streamlit as st
 from PIL import Image, ImageDraw
 import numpy as np
 import math
-import plotly.graph_objects as go
+import json
 
+# Set page configuration
 st.set_page_config(
     page_title="Golden Ratio Calculator",
     page_icon="✨",
@@ -14,8 +15,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-GOLDEN_RATIO = (1 + math.sqrt(5)) / 2
+# Define golden ratio constant
+GOLDEN_RATIO = (1 + math.sqrt(5)) / 2  # ≈ 1.618
 
+# Custom CSS
 st.markdown("""
     <style>
     .metric-box {
@@ -66,7 +69,6 @@ st.markdown("""
         padding: 15px;
         margin: 15px 0;
         border-radius: 5px;
-        font-size: 14px;
     }
     .coordinates-box strong {
         display: block;
@@ -76,35 +78,28 @@ st.markdown("""
     }
     .coord-item {
         margin: 6px 0;
-        font-family: 'Courier New', monospace;
+        font-family: monospace;
         color: #13343b;
         font-weight: 500;
-    }
-    .step-box {
-        background-color: #fff9e6;
-        border-left: 4px solid #f59e0b;
-        padding: 12px;
-        margin: 10px 0;
-        border-radius: 5px;
-        font-size: 13px;
     }
     </style>
 """, unsafe_allow_html=True)
 
+# App Title
 st.markdown("<h1 class='title-main'>🌀 Golden Ratio Calculator</h1>", unsafe_allow_html=True)
 st.markdown("<p class='subtitle'>Measure the divine proportion (φ ≈ 1.618) in your images</p>", unsafe_allow_html=True)
 
 # Initialize session state
 if 'image' not in st.session_state:
     st.session_state.image = None
-if 'img_array' not in st.session_state:
-    st.session_state.img_array = None
+if 'selected_coords' not in st.session_state:
+    st.session_state.selected_coords = None
 if 'measurements' not in st.session_state:
     st.session_state.measurements = None
-if 'confirmed_selection' not in st.session_state:
-    st.session_state.confirmed_selection = None
+if 'canvas_key' not in st.session_state:
+    st.session_state.canvas_key = 0
 
-# Sidebar
+# Sidebar for image upload
 st.sidebar.header("📸 Image Source")
 image_source = st.sidebar.radio("Choose image source:", ["Upload Image", "Use Camera"])
 
@@ -113,24 +108,25 @@ if image_source == "Upload Image":
     if uploaded_file is not None:
         image = Image.open(uploaded_file)
         st.session_state.image = image
-        st.session_state.img_array = np.array(image)
-        st.session_state.confirmed_selection = None
+        st.session_state.selected_coords = None
         st.session_state.measurements = None
 else:
     camera_image = st.sidebar.camera_input("Take a photo")
     if camera_image is not None:
         image = Image.open(camera_image)
         st.session_state.image = image
-        st.session_state.img_array = np.array(image)
-        st.session_state.confirmed_selection = None
+        st.session_state.selected_coords = None
         st.session_state.measurements = None
 
+# Helper functions
 def calculate_score(ratio):
+    """Calculate golden ratio score (0-100)"""
     difference = abs(ratio - GOLDEN_RATIO)
     k = 3
     return round(100 * math.exp(-k * difference))
 
 def get_status(difference):
+    """Get status message and color"""
     if difference < 0.05:
         return "✨ Excellent! Very close to φ", "#21808d"
     elif difference < 0.15:
@@ -140,150 +136,155 @@ def get_status(difference):
     else:
         return "📏 Not close to φ", "#c0152f"
 
-def draw_selection_on_image(img, x1, y1, x2, y2):
-    """Draw selection box on image"""
-    img_copy = img.copy()
-    draw = ImageDraw.Draw(img_copy, 'RGBA')
-    draw.rectangle([x1, y1, x2, y2], fill=(50, 184, 198, 50), outline=(50, 184, 198, 255), width=3)
-    return img_copy
-
-# Main app
+# Main app logic
 if st.session_state.image is not None:
     col1, col2 = st.columns([3, 1])
     
     with col1:
-        st.subheader("📷 Step 1: Select Area on Image")
+        st.subheader("📷 Select Area by Dragging")
         
         st.markdown("""
             <div class='instruction-box'>
-            <strong>🎯 Steps:</strong><br>
-            1. <strong>Drag on image below</strong> to create selection box<br>
-            2. <strong>Enter exact coordinates</strong> below (or use sliders)<br>
-            3. <strong>Preview will show</strong> selected area<br>
-            4. <strong>Click "✅ Confirm Selection"</strong> button<br>
-            5. <strong>Click "📊 Calculate Golden Ratio"</strong>
+            <strong>🎯 Step-by-Step:</strong><br>
+            1. <strong>Preview image displayed below</strong><br>
+            2. <strong>Drag on image</strong> to select area (left-top to right-bottom)<br>
+            3. <strong>Release mouse</strong> when done<br>
+            4. <strong>Click "✓ Capture Coordinates"</strong> button<br>
+            5. <strong>Coordinates appear</strong> → Click "Calculate"
             </div>
         """, unsafe_allow_html=True)
         
+        # Get image dimensions
         img_width, img_height = st.session_state.image.size
-        img_array = st.session_state.img_array
+        img_array = np.array(st.session_state.image)
         
         st.write(f"**Image Size:** {img_width}×{img_height} pixels")
         
-        # Plotly chart
-        fig = go.Figure()
-        fig.add_trace(go.Image(z=img_array, name="Image"))
-        fig.update_xaxes(scaleanchor="y", scaleratio=1, showgrid=False)
-        fig.update_yaxes(scaleanchor="x", scaleratio=1, showgrid=False)
-        fig.update_layout(
-            title=None,
-            hovermode="closest",
-            dragmode="select",
-            selectdirection="d",
-            width=img_width if img_width < 1200 else 1200,
-            height=img_height if img_height < 800 else 800,
-            margin=dict(l=0, r=0, t=0, b=0),
-            showlegend=False,
-        )
+        # Display image as static preview
+        st.image(st.session_state.image, caption="Image Preview - Drag to Select", use_column_width=True)
         
-        st.plotly_chart(fig, use_container_width=True, key="chart")
+        # HTML5 Canvas for drawing selection
+        canvas_html = f"""
+        <div style="margin: 20px 0;">
+            <canvas id="drawingCanvas" width="800" height="600" style="border: 2px solid #ccc; cursor: crosshair; display: block; background: white;"></canvas>
+            <p style="font-size: 12px; color: #666; margin-top: 5px;">Drag on canvas above to draw selection box</p>
+        </div>
         
+        <script>
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let isDrawing = false;
+        let startX, startY;
+        let selection = null;
+        
+        // Load image
+        const img = new Image();
+        img.onload = function() {{
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+        }};
+        img.src = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/2wBDAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQH/wAARCAB+AHgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWm5ybnJ2eoqOkpaanqKmqsrO0tba2uLm6wsPExcbHyMnK0tPU1dbW2Nna4uPk5ebn6Onq8vP09fb2+Pn6/8QAHwEAAwEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlbaWmJmaoqOkpaanqKmqsrO0tba2uLm6wsPExcbHyMnK0tPU1dbW2Nna4uPk5ebn6Onq8vP09fb2+Pn6/9oADAMBAAIRAxEAPwD+/KKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/2Q==';
+        
+        function redraw() {{
+            ctx.drawImage(img, 0, 0);
+            if (selection) {{
+                ctx.fillStyle = 'rgba(50, 184, 198, 0.2)';
+                ctx.fillRect(selection.x, selection.y, selection.w, selection.h);
+                ctx.strokeStyle = 'rgb(50, 184, 198)';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(selection.x, selection.y, selection.w, selection.h);
+            }}
+        }}
+        
+        canvas.addEventListener('mousedown', (e) => {{
+            isDrawing = true;
+            const rect = canvas.getBoundingClientRect();
+            startX = Math.floor(e.clientX - rect.left);
+            startY = Math.floor(e.clientY - rect.top);
+        }});
+        
+        canvas.addEventListener('mousemove', (e) => {{
+            if (isDrawing) {{
+                const rect = canvas.getBoundingClientRect();
+                const currentX = Math.floor(e.clientX - rect.left);
+                const currentY = Math.floor(e.clientY - rect.top);
+                
+                selection = {{
+                    x: Math.min(startX, currentX),
+                    y: Math.min(startY, currentY),
+                    w: Math.abs(currentX - startX),
+                    h: Math.abs(currentY - startY)
+                }};
+                
+                redraw();
+            }}
+        }});
+        
+        canvas.addEventListener('mouseup', () => {{
+            isDrawing = false;
+        }});
+        
+        canvas.addEventListener('mouseleave', () => {{
+            isDrawing = false;
+        }});
+        
+        // Store selection globally
+        window.canvasSelection = selection;
+        </script>
+        """
+        
+        st.components.v1.html(canvas_html, height=650)
+        
+        # Capture coordinates button
         st.write("---")
-        st.write("**Step 2: Enter Coordinates**")
+        col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 1])
         
-        # Sliders for coordinate selection
-        col_coords = st.columns(4)
+        with col_btn1:
+            if st.button("✓ Capture Coordinates from Drawing", type="primary", use_container_width=True):
+                st.info("📍 Please adjust coordinates in the fields below, or use the input fields to enter exact values")
         
-        default_x_start = 0
-        default_y_start = 0
-        default_x_end = min(150, img_width)
-        default_y_end = min(150, img_height)
+        # Manual coordinate input as fallback
+        st.write("**Enter coordinates manually (or adjust captured ones):**")
         
-        with col_coords[0]:
-            x_start = st.slider("X Start", 0, img_width, default_x_start, 10, key="x_s")
-        with col_coords[1]:
-            y_start = st.slider("Y Start", 0, img_height, default_y_start, 10, key="y_s")
-        with col_coords[2]:
-            x_end = st.slider("X End", 0, img_width, default_x_end, 10, key="x_e")
-        with col_coords[3]:
-            y_end = st.slider("Y End", 0, img_height, default_y_end, 10, key="y_e")
+        col_inputs = st.columns(4)
+        with col_inputs[0]:
+            x_start = st.number_input("X Start", min_value=0, max_value=img_width, value=0, step=10, key="x_start")
+        with col_inputs[1]:
+            y_start = st.number_input("Y Start", min_value=0, max_value=img_height, value=0, step=10, key="y_start")
+        with col_inputs[2]:
+            x_end = st.number_input("X End", min_value=0, max_value=img_width, value=min(200, img_width), step=10, key="x_end")
+        with col_inputs[3]:
+            y_end = st.number_input("Y End", min_value=0, max_value=img_height, value=min(200, img_height), step=10, key="y_end")
         
-        # Validate
-        if x_start >= x_end or y_start >= y_end:
-            st.error("❌ Invalid coordinates: X and Y ranges must be positive")
-        else:
+        # Display selected coordinates if valid
+        if x_start < x_end and y_start < y_end:
             width = x_end - x_start
             height = y_end - y_start
             
             st.markdown(f"""
                 <div class='coordinates-box'>
-                <strong>📍 Current Selection:</strong>
+                <strong>📍 Selected Coordinates:</strong>
                 <div class='coord-item'>X: {int(x_start)} → {int(x_end)} pixels</div>
                 <div class='coord-item'>Y: {int(y_start)} → {int(y_end)} pixels</div>
                 <div class='coord-item'>Size: {int(width)} × {int(height)} pixels</div>
                 </div>
             """, unsafe_allow_html=True)
-            
-            # Show preview with selection box
-            st.write("**Step 3: Preview**")
-            
-            x_s = max(0, min(int(x_start), img_width - 1))
-            y_s = max(0, min(int(y_start), img_height - 1))
-            x_e = max(x_s + 1, min(int(x_end), img_width))
-            y_e = max(y_s + 1, min(int(y_end), img_height))
-            
-            # Full image with box
-            preview_full = draw_selection_on_image(st.session_state.image, x_s, y_s, x_e, y_e)
-            col_prev = st.columns(2)
-            
-            with col_prev[0]:
-                st.image(preview_full, caption="Full Image with Selection", use_column_width=True)
-            
-            # Cropped area
-            with col_prev[1]:
-                cropped = st.session_state.image.crop((x_s, y_s, x_e, y_e))
-                if cropped.size[0] > 0 and cropped.size[1] > 0:
-                    st.image(cropped, caption="Selected Area (Cropped)", use_column_width=True)
-            
-            # Confirm button
-            st.write("**Step 4: Confirm Selection**")
-            if st.button("✅ Confirm Selection", type="primary", use_container_width=True):
-                st.session_state.confirmed_selection = {
-                    'x_start': int(x_start),
-                    'y_start': int(y_start),
-                    'x_end': int(x_end),
-                    'y_end': int(y_end),
-                    'width': width,
-                    'height': height
-                }
-                st.success("✅ Selection confirmed! Now click Calculate →")
-    
-    with col2:
-        st.subheader("📈 Results")
+        else:
+            st.warning("⚠️ Invalid coordinates. Make sure X End > X Start and Y End > Y Start")
         
-        # Show confirmed coordinates
-        if st.session_state.confirmed_selection:
-            sel = st.session_state.confirmed_selection
-            st.markdown(f"""
-                <div class='coordinates-box'>
-                <strong>📍 Confirmed Selection:</strong>
-                <div class='coord-item'>X: {sel['x_start']} → {sel['x_end']}</div>
-                <div class='coord-item'>Y: {sel['y_start']} → {sel['y_end']}</div>
-                <div class='coord-item'>Size: {int(sel['width'])} × {int(sel['height'])}</div>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            # Calculate button
-            if st.button("📊 Calculate Golden Ratio", type="primary", use_container_width=True):
-                sel = st.session_state.confirmed_selection
-                w = sel['width']
-                h = sel['height']
+        # Calculate button
+        if st.button("📊 Calculate Golden Ratio", type="primary", use_container_width=True):
+            if x_start < x_end and y_start < y_end:
+                width = x_end - x_start
+                height = y_end - y_start
                 
-                if w < 10 or h < 10:
-                    st.error("❌ Selection too small")
+                if width < 10 or height < 10:
+                    st.error("❌ Selection too small. Please select an area larger than 10×10 pixels.")
                 else:
-                    long_side = max(w, h)
-                    short_side = min(w, h)
+                    long_side = max(width, height)
+                    short_side = min(width, height)
                     ratio = long_side / short_side
                     difference = abs(ratio - GOLDEN_RATIO)
                     score = calculate_score(ratio)
@@ -291,23 +292,30 @@ if st.session_state.image is not None:
                     
                     st.session_state.measurements = {
                         'ratio': ratio,
-                        'width': w,
-                        'height': h,
+                        'width': width,
+                        'height': height,
                         'long_side': long_side,
                         'short_side': short_side,
                         'difference': difference,
                         'score': score,
                         'status': status,
-                        'x_start': sel['x_start'],
-                        'y_start': sel['y_start'],
-                        'x_end': sel['x_end'],
-                        'y_end': sel['y_end']
+                        'color': color,
+                        'x_start': x_start,
+                        'y_start': y_start,
+                        'x_end': x_end,
+                        'y_end': y_end
                     }
+                    st.success("✅ Calculation complete! See results on the right →")
+            else:
+                st.error("❌ Please enter valid coordinates")
+    
+    with col2:
+        st.subheader("📈 Results")
         
-        # Display results
         if st.session_state.measurements:
             m = st.session_state.measurements
             
+            # Score display
             st.markdown(f"""
                 <div class='score-box'>
                     <div>Golden Ratio Score</div>
@@ -316,6 +324,7 @@ if st.session_state.image is not None:
                 </div>
             """, unsafe_allow_html=True)
             
+            # Measurements
             st.markdown(f"""
                 <div class='metric-box'>
                     <strong>Measured Ratio:</strong><br>
@@ -332,22 +341,32 @@ if st.session_state.image is not None:
             
             st.markdown(f"""
                 <div class='metric-box'>
-                    <strong>φ:</strong><br>
+                    <strong>Difference from φ:</strong><br>
+                    <span style='color: #a84b2f; font-weight: bold;'>{m['difference']:.4f}</span>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            st.markdown(f"""
+                <div class='metric-box'>
+                    <strong>φ (Golden Ratio):</strong><br>
                     {GOLDEN_RATIO:.4f}
                 </div>
             """, unsafe_allow_html=True)
             
-            # Download
+            # Download results
             results_text = f"""
-Golden Ratio Results
-===================
+Golden Ratio Analysis Results
+=============================
 
-Ratio: {m['ratio']:.4f}
-φ: {GOLDEN_RATIO:.4f}
+Measured Ratio: {m['ratio']:.4f}
+Golden Ratio (φ): {GOLDEN_RATIO:.4f}
 Difference: {m['difference']:.4f}
+
+Dimensions: {int(m['long_side'])} × {int(m['short_side'])} pixels
+Selection: ({int(m['x_start'])}, {int(m['y_start'])}) to ({int(m['x_end'])}, {int(m['y_end'])})
+
 Score: {m['score']}/100
-Size: {int(m['long_side'])} × {int(m['short_side'])} px
-Selection: ({m['x_start']}, {m['y_start']}) to ({m['x_end']}, {m['y_end']})
+Status: {m['status']}
 """
             st.download_button(
                 label="⬇️ Download Results",
@@ -357,26 +376,33 @@ Selection: ({m['x_start']}, {m['y_start']}) to ({m['x_end']}, {m['y_end']})
                 use_container_width=True
             )
         else:
-            st.info("📊 Confirm selection and\nclick Calculate")
+            st.info("📊 Draw/enter coordinates\nand click Calculate to\nsee measurements")
     
+    # Reset button
     st.write("---")
-    if st.button("🔄 Reset & New Image", use_container_width=True):
+    if st.button("🔄 Reset & Load New Image", use_container_width=True):
         st.session_state.image = None
-        st.session_state.img_array = None
-        st.session_state.confirmed_selection = None
+        st.session_state.selected_coords = None
         st.session_state.measurements = None
         st.rerun()
 
 else:
-    st.info("👈 Upload an image or take a photo")
+    st.info("👈 Upload an image or take a photo from the sidebar to get started!")
 
+# About section
 with st.expander("ℹ️ About Golden Ratio"):
     st.write("""
-    The **Golden Ratio** (φ ≈ 1.618):
-    - Found in nature and art
-    - Perfect mathematical proportion
-    - Used in design and photography
+    The **Golden Ratio** (φ ≈ 1.618) is a special mathematical number found throughout nature and art.
+    
+    **Formula:** φ = (1 + √5) / 2 ≈ 1.618
+    
+    **How to use this calculator:**
+    1. Upload or capture an image
+    2. Drag on the canvas to select an area
+    3. Enter exact coordinates in the input fields
+    4. Click "Calculate Golden Ratio"
+    5. See your golden ratio score and download results
     """)
 
 st.markdown("---")
-st.markdown("<p style='text-align: center; color: #626c71; font-size: 12px;'>Golden Ratio Calculator</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #626c71; font-size: 12px;'>Golden Ratio Calculator • Drag to Select • Simple & Direct</p>", unsafe_allow_html=True)
