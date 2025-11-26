@@ -267,10 +267,10 @@ if st.session_state.image is not None:
                 g_width = st.session_state.g_width
                 g_height = st.session_state.g_height
                 
-                if g_width >= 10 and g_height >= 10:
+                if SELECTION_WIDTH >= 10 and SELECTION_HEIGHT >= 10:
                     # ✅ USE GLOBAL VARIABLES HERE
-                    long_side = max(g_width, g_height)
-                    short_side = min(g_width, g_height)
+                    long_side = max(SELECTION_WIDTH, SELECTION_HEIGHT)
+                    short_side = min(SELECTION_WIDTH, SELECTION_HEIGHT)
                     ratio = long_side / short_side
                     difference = abs(ratio - GOLDEN_RATIO)
                     score = calculate_score(ratio)
