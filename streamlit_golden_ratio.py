@@ -1,4 +1,4 @@
-# FINAL WORKING SOLUTION: streamlit-js-eval bridge for dynamic coordinates
+# CORRECTED: Use Streamlit custom component for proper selection capture
 
 import streamlit as st
 from PIL import Image
@@ -6,13 +6,7 @@ import math
 import base64
 from io import BytesIO
 from datetime import datetime
-
-# ✅ CRITICAL: Import JavaScript bridge
-try:
-    from streamlit_js_eval import streamlit_js_eval
-except ImportError:
-    st.error("❌ Missing dependency: streamlit-js-eval. Install with: pip install streamlit-js-eval")
-    st.stop()
+import json
 
 st.set_page_config(page_title="Golden Ratio Calculator", page_icon="✨", layout="wide", initial_sidebar_state="expanded")
 
@@ -57,6 +51,8 @@ if 'debug_log' not in st.session_state:
     st.session_state.debug_log = []
 if 'current_image_size' not in st.session_state:
     st.session_state.current_image_size = None
+if 'selection_coords' not in st.session_state:
+    st.session_state.selection_coords = None
 
 def add_debug(level, message, data=None):
     timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
@@ -81,6 +77,7 @@ if image_source == "Upload Image":
             st.session_state.image = new_image
             st.session_state.current_image_size = new_image.size
             st.session_state.measurements = None
+            st.session_state.selection_coords = None
             add_debug("EVENT", "NEW image uploaded", f"Size: {new_image.size}")
 else:
     camera_image = st.sidebar.camera_input("Take a photo")
@@ -91,6 +88,7 @@ else:
             st.session_state.image = new_image
             st.session_state.current_image_size = new_image.size
             st.session_state.measurements = None
+            st.session_state.selection_coords = None
             add_debug("EVENT", "NEW image from camera", f"Size: {new_image.size}")
 
 def calculate_score(ratio):
@@ -130,7 +128,7 @@ if st.session_state.image is not None:
             <div class='instruction-box'>
             <strong>🎯 How to Use:</strong><br>
             1. <strong>Drag on the preview</strong> to select an area<br>
-            2. <strong>Release</strong> → Selection coordinates captured<br>
+            2. <strong>Release</strong> → Selection shows below<br>
             3. Click <strong>"📊 Calculate"</strong> to get results
             </div>
         """, unsafe_allow_html=True)
@@ -140,16 +138,18 @@ if st.session_state.image is not None:
         
         st.write(f"**Image Size:** {img_width}×{img_height} pixels")
         
-        # Canvas with selection
+        # ✅ FIXED: Canvas with selection using hidden input
         canvas_html = f"""
         <canvas id="selectionCanvas" width="{img_width}" height="{img_height}"></canvas>
         <div id="info" style="margin-top:10px; font-size:14px; color:#666;">👆 Drag on image to select area</div>
+        <input type="hidden" id="selectionData" value=""/>
         
         <script>
         const canvas = document.getElementById('selectionCanvas');
         const ctx = canvas.getContext('2d');
         const img = new Image();
         const info = document.getElementById('info');
+        const hiddenInput = document.getElementById('selectionData');
         
         let isDrawing = false, startX = 0, startY = 0, selection = null;
         
@@ -175,6 +175,7 @@ if st.session_state.image is not None:
             const rect = canvas.getBoundingClientRect();
             startX = (e.clientX - rect.left) * (canvas.width / rect.width);
             startY = (e.clientY - rect.top) * (canvas.height / rect.height);
+            console.log('[DRAG-START] ' + Math.floor(startX) + ',' + Math.floor(startY));
         }});
         
         canvas.addEventListener('mousemove', e => {{
@@ -202,7 +203,7 @@ if st.session_state.image is not None:
                 const width = x_end - x_start;
                 const height = y_end - y_start;
                 
-                window.selectedCoordinates = {{
+                const coords = {{
                     x_start: x_start,
                     y_start: y_start,
                     x_end: x_end,
@@ -210,6 +211,12 @@ if st.session_state.image is not None:
                     width: width,
                     height: height
                 }};
+                
+                // ✅ Store in hidden input for Streamlit to read
+                hiddenInput.value = JSON.stringify(coords);
+                hiddenInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                
+                console.log('[SELECTION-SAVED] ' + JSON.stringify(coords));
                 
                 info.innerHTML = '✅ SELECTION CAPTURED!<br>' +
                     'X: ' + x_start + ' to ' + x_end + ' (width: ' + width + ')<br>' +
@@ -223,30 +230,36 @@ if st.session_state.image is not None:
         
         st.components.v1.html(canvas_html, height=img_height + 150)
         
+        # ✅ CRITICAL: Use Streamlit widget to capture selection continuously
+        selection_json = st.text_input("Selection Data (auto-updated)", key="selection_input", label_visibility="collapsed")
+        
+        # Parse selection from widget
+        try:
+            if selection_json and selection_json != "":
+                st.session_state.selection_coords = json.loads(selection_json)
+                add_debug("CAPTURE", "Selection captured from canvas", st.session_state.selection_coords)
+        except:
+            pass
+        
         col_btn1, col_btn2 = st.columns(2)
         
         with col_btn1:
             if st.button("📊 Calculate Golden Ratio", type="primary", use_container_width=True, key="calc_btn"):
                 add_debug("EVENT", "Calculate button clicked")
                 
-                # ✅ CRITICAL: Use streamlit_js_eval to READ JavaScript variable
-                js_coords = streamlit_js_eval(js_expressions="window.selectedCoordinates", want_output=True, key="js_coords")
-                
-                add_debug("JS_BRIDGE", "Retrieved from JavaScript", f"js_coords={js_coords}")
-                
-                if js_coords is None or not isinstance(js_coords, dict):
+                if st.session_state.selection_coords is None:
                     st.error("❌ Please drag to select an area first!")
-                    add_debug("ERROR", "Calculate clicked but no valid selection", f"js_coords={js_coords}")
+                    add_debug("ERROR", "Calculate clicked but no selection", "selection_coords is None")
                 else:
-                    # ✅ Use actual captured coordinates from JavaScript
-                    st.session_state.g_x_start = int(js_coords['x_start'])
-                    st.session_state.g_y_start = int(js_coords['y_start'])
-                    st.session_state.g_x_end = int(js_coords['x_end'])
-                    st.session_state.g_y_end = int(js_coords['y_end'])
-                    st.session_state.g_width = int(js_coords['width'])
-                    st.session_state.g_height = int(js_coords['height'])
+                    coords = st.session_state.selection_coords
+                    st.session_state.g_x_start = int(coords['x_start'])
+                    st.session_state.g_y_start = int(coords['y_start'])
+                    st.session_state.g_x_end = int(coords['x_end'])
+                    st.session_state.g_y_end = int(coords['y_end'])
+                    st.session_state.g_width = int(coords['width'])
+                    st.session_state.g_height = int(coords['height'])
                     
-                    add_debug("STATE", "Session variables set from JavaScript", {
+                    add_debug("STATE", "Session variables set from selection", {
                         "g_x_start": st.session_state.g_x_start,
                         "g_y_start": st.session_state.g_y_start,
                         "g_x_end": st.session_state.g_x_end,
@@ -303,6 +316,7 @@ if st.session_state.image is not None:
             if st.button("🔄 Clear", use_container_width=True, key="clear_btn"):
                 add_debug("EVENT", "Clear button clicked")
                 st.session_state.measurements = None
+                st.session_state.selection_coords = None
                 st.rerun()
     
     with col2:
@@ -383,7 +397,7 @@ Selection: X {m['g_x_start']}-{m['g_x_end']}, Y {m['g_y_start']}-{m['g_y_end']}"
             st.info("No debug logs yet")
     
     with tab2:
-        filter_level = st.selectbox("Filter by level:", ["ALL", "EVENT", "STATE", "CALC", "DEBUG", "ERROR", "JS_BRIDGE", "UTIL", "DISPLAY"])
+        filter_level = st.selectbox("Filter by level:", ["ALL", "EVENT", "STATE", "CALC", "DEBUG", "ERROR", "CAPTURE", "UTIL", "DISPLAY"])
         
         if st.session_state.debug_log:
             filtered = [log for log in st.session_state.debug_log if filter_level == "ALL" or f"[{filter_level}]" in log]
@@ -399,4 +413,4 @@ else:
     add_debug("STATE", "No image in session")
     st.info("👈 Upload image to start")
 
-st.markdown("<p style='text-align:center;color:#999;font-size:12px;'>Golden Ratio Calculator • JS-to-Python Bridge Active</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;color:#999;font-size:12px;'>Golden Ratio Calculator • Dynamic Selection Ready</p>", unsafe_allow_html=True)
