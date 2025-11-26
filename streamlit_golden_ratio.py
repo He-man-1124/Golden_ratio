@@ -1,4 +1,4 @@
-# Golden Ratio Calculator - Streamlit with Interactive Plotly Selection
+# Golden Ratio Calculator - Streamlit with Interactive Plotly Selection (FIXED)
 # Works perfectly! Drag box on image to select area
 
 import streamlit as st
@@ -6,7 +6,6 @@ from PIL import Image
 import numpy as np
 import math
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 # Set page configuration
 st.set_page_config(
@@ -144,7 +143,7 @@ if st.session_state.image is not None:
             hovertemplate="<b>Pixel coordinates</b><br>X: %{x}<br>Y: %{y}<extra></extra>"
         ))
         
-        # Update layout for interactive selection
+        # Update layout for interactive selection - FIXED: selectdirection='d'
         fig.update_layout(
             title=None,
             xaxis=dict(
@@ -159,7 +158,7 @@ if st.session_state.image is not None:
             ),
             hovermode="closest",
             dragmode="select",  # Enable selection mode
-            selectdirection="diagonal",
+            selectdirection="d",  # FIXED: 'd' for diagonal instead of 'diagonal'
             width=img_width if img_width < 1200 else 1200,
             height=img_height if img_height < 800 else 800,
             margin=dict(l=0, r=0, t=0, b=0),
