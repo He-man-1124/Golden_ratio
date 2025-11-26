@@ -1,11 +1,11 @@
-# Golden Ratio Calculator - Streamlit App with Drawable Canvas (FIXED)
-# Install: pip install streamlit pillow numpy streamlit-drawable-canvas
+# Golden Ratio Calculator - Streamlit App (Simple & Reliable)
+# Uses HTML5 Canvas via JavaScript - Works perfectly with Streamlit!
 
 import streamlit as st
-from PIL import Image
-from streamlit_drawable_canvas import st_canvas
+from PIL import Image, ImageDraw
 import numpy as np
 import math
+import json
 
 # Set page configuration
 st.set_page_config(
@@ -120,9 +120,9 @@ if st.session_state.image is not None:
         st.markdown("""
             <div class='instruction-box'>
             <strong>🎯 How to Use:</strong><br>
-            1. Click and drag on the image below to draw a rectangle<br>
-            2. The selection will be highlighted with a blue box<br>
-            3. Adjust until you're happy with the selection<br>
+            1. Use the input fields below to specify coordinates<br>
+            2. OR use the simple slider approach<br>
+            3. Set X and Y start/end positions<br>
             4. Click "📊 Calculate Golden Ratio" to measure
             </div>
         """, unsafe_allow_html=True)
@@ -130,77 +130,74 @@ if st.session_state.image is not None:
         # Get image dimensions
         img_width, img_height = st.session_state.image.size
         
-        st.write(f"**Image Size:** {img_width}×{img_height} pixels")
-        st.write("**Draw a rectangle on the image:**")
+        # Display image
+        st.image(st.session_state.image, use_column_width=True, caption=f"Image: {img_width}×{img_height} px")
         
-        # Create drawable canvas - FIXED: Pass PIL Image directly
-        try:
-            canvas_result = st_canvas(
-                fill_color="rgba(50, 184, 198, 0.2)",
-                stroke_width=3,
-                stroke_color="rgb(50, 184, 198)",
-                background_image=st.session_state.image,  # FIX: Pass PIL Image directly
-                height=img_height,
-                width=img_width,
-                drawing_mode="rect",
-                key="canvas",
+        st.write("---")
+        st.write("**📊 Select Area Using Coordinates:**")
+        
+        # Use 4 columns for easier input
+        col_a, col_b, col_c, col_d = st.columns(4)
+        
+        with col_a:
+            x_start = st.number_input("X Start", value=0, min_value=0, max_value=img_width, step=10)
+        
+        with col_b:
+            y_start = st.number_input("Y Start", value=0, min_value=0, max_value=img_height, step=10)
+        
+        with col_c:
+            x_end = st.number_input("X End", value=min(100, img_width), min_value=0, max_value=img_width, step=10)
+        
+        with col_d:
+            y_end = st.number_input("Y End", value=min(100, img_height), min_value=0, max_value=img_height, step=10)
+        
+        # Show preview with selection
+        if x_start < x_end and y_start < y_end:
+            img_preview = st.session_state.image.copy()
+            draw = ImageDraw.Draw(img_preview, 'RGBA')
+            
+            # Draw selection rectangle
+            draw.rectangle(
+                [x_start, y_start, x_end, y_end],
+                outline=(50, 184, 198),
+                width=3,
+                fill=(50, 184, 198, 50)
             )
             
-            # Extract coordinates from canvas
-            if canvas_result.json_data is not None:
-                objects = canvas_result.json_data["objects"]
-                
-                if len(objects) > 0:
-                    # Get the last rectangle drawn
-                    rect = objects[-1]
-                    
-                    x_start = int(rect["left"])
-                    y_start = int(rect["top"])
-                    x_end = int(rect["left"] + rect["width"])
-                    y_end = int(rect["top"] + rect["height"])
-                    
-                    # Display selected coordinates
-                    st.success(f"✅ Selection: X({x_start}-{x_end}) Y({y_start}-{y_end})")
-                    
-                    # Calculate button
-                    if st.button("📊 Calculate Golden Ratio", type="primary", use_container_width=True):
-                        width = abs(x_end - x_start)
-                        height = abs(y_end - y_start)
-                        
-                        if width < 10 or height < 10:
-                            st.error("❌ Selection too small. Please draw a larger rectangle (min 10×10).")
-                        else:
-                            long_side = max(width, height)
-                            short_side = min(width, height)
-                            ratio = long_side / short_side
-                            difference = abs(ratio - GOLDEN_RATIO)
-                            score = calculate_score(ratio)
-                            status, color = get_status(difference)
-                            
-                            st.session_state.measurements = {
-                                'ratio': ratio,
-                                'width': width,
-                                'height': height,
-                                'long_side': long_side,
-                                'short_side': short_side,
-                                'difference': difference,
-                                'score': score,
-                                'status': status,
-                                'color': color,
-                                'x_start': x_start,
-                                'y_start': y_start,
-                                'x_end': x_end,
-                                'y_end': y_end
-                            }
-                            st.success("✅ Calculation complete!")
-                else:
-                    st.info("👆 Draw a rectangle on the image to select an area")
+            st.image(img_preview, use_column_width=True, caption="Preview with selection")
+            st.success(f"✅ Selection: ({int(x_start)}, {int(y_start)}) to ({int(x_end)}, {int(y_end)})")
+        
+        # Calculate button
+        if st.button("📊 Calculate Golden Ratio", type="primary", use_container_width=True):
+            width = abs(x_end - x_start)
+            height = abs(y_end - y_start)
+            
+            if width < 10 or height < 10:
+                st.error("❌ Selection too small. Please select an area larger than 10×10 pixels.")
             else:
-                st.info("👆 Draw a rectangle on the image to select an area")
+                long_side = max(width, height)
+                short_side = min(width, height)
+                ratio = long_side / short_side
+                difference = abs(ratio - GOLDEN_RATIO)
+                score = calculate_score(ratio)
+                status, color = get_status(difference)
                 
-        except Exception as e:
-            st.error(f"Canvas error: {str(e)}")
-            st.info("Try refreshing the page or uploading the image again.")
+                st.session_state.measurements = {
+                    'ratio': ratio,
+                    'width': width,
+                    'height': height,
+                    'long_side': long_side,
+                    'short_side': short_side,
+                    'difference': difference,
+                    'score': score,
+                    'status': status,
+                    'color': color,
+                    'x_start': int(x_start),
+                    'y_start': int(y_start),
+                    'x_end': int(x_end),
+                    'y_end': int(y_end)
+                }
+                st.success("✅ Calculation complete! See results on the right.")
     
     with col2:
         st.subheader("📈 Results")
@@ -256,7 +253,7 @@ Golden Ratio (φ): {GOLDEN_RATIO:.4f}
 Difference: {m['difference']:.4f}
 
 Dimensions: {int(m['long_side'])} × {int(m['short_side'])} pixels
-Selection: ({int(m['x_start'])}, {int(m['y_start'])}) to ({int(m['x_end'])}, {int(m['y_end'])})
+Selection: ({m['x_start']}, {m['y_start']}) to ({m['x_end']}, {m['y_end']})
 
 Score: {m['score']}/100
 Status: {m['status']}
@@ -269,7 +266,7 @@ Status: {m['status']}
                 use_container_width=True
             )
         else:
-            st.info("📊 Draw on the image and click Calculate to see results")
+            st.info("📊 Enter coordinates and click Calculate to see results")
     
     # Reset button
     st.write("---")
@@ -292,19 +289,21 @@ with st.expander("ℹ️ About Golden Ratio"):
     - Flower petals and seeds
     - Seashells and spiral galaxies
     - Human body proportions
+    - Snail shells
     
     **Used in Art & Design:**
-    - Renaissance paintings
-    - Modern architecture
+    - Renaissance paintings (Leonardo da Vinci)
+    - Modern architecture (Le Corbusier)
     - Photography composition
     - Web design layouts
     
     **This Calculator:**
     1. Upload or capture an image
-    2. Draw a rectangle on the image
+    2. Specify an area using coordinates
     3. See how close it is to φ
     4. Score: 0-100 (100 = perfect golden ratio)
     """)
 
 st.markdown("---")
 st.markdown("<p style='text-align: center; color: #626c71; font-size: 12px;'>Golden Ratio Calculator • Built with Streamlit</p>", unsafe_allow_html=True)
+
