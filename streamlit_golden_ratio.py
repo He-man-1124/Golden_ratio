@@ -1,11 +1,9 @@
-# Golden Ratio Calculator - Streamlit App (Simple & Reliable)
-# Uses HTML5 Canvas via JavaScript - Works perfectly with Streamlit!
+# Golden Ratio Calculator - Streamlit App with Custom Drag Selection
+# NO external canvas library - Pure Streamlit solution!
 
 import streamlit as st
 from PIL import Image, ImageDraw
-import numpy as np
 import math
-import json
 
 # Set page configuration
 st.set_page_config(
@@ -71,8 +69,8 @@ st.markdown("<h1 class='title-main'>🌀 Golden Ratio Calculator</h1>", unsafe_a
 st.markdown("<p class='subtitle'>Measure the divine proportion (φ ≈ 1.618) in your images</p>", unsafe_allow_html=True)
 
 # Initialize session state
-if 'image' not in st.session_state:
-    st.session_state.image = None
+if 'original_image' not in st.session_state:
+    st.session_state.original_image = None
 if 'measurements' not in st.session_state:
     st.session_state.measurements = None
 
@@ -84,12 +82,12 @@ if image_source == "Upload Image":
     uploaded_file = st.sidebar.file_uploader("Choose an image file", type=["jpg", "jpeg", "png", "bmp", "gif"])
     if uploaded_file is not None:
         image = Image.open(uploaded_file)
-        st.session_state.image = image
+        st.session_state.original_image = image
 else:
     camera_image = st.sidebar.camera_input("Take a photo")
     if camera_image is not None:
         image = Image.open(camera_image)
-        st.session_state.image = image
+        st.session_state.original_image = image
 
 # Helper function to calculate score
 def calculate_score(ratio):
@@ -111,61 +109,62 @@ def get_status(difference):
         return "📏 Not close to φ", "#c0152f"
 
 # Main app logic
-if st.session_state.image is not None:
+if st.session_state.original_image is not None:
     col1, col2 = st.columns([2.5, 1])
     
     with col1:
-        st.subheader("📷 Tap & Drag to Select Area")
+        st.subheader("📷 Interactive Selection")
         
         st.markdown("""
             <div class='instruction-box'>
-            <strong>🎯 How to Use:</strong><br>
-            1. Use the input fields below to specify coordinates<br>
-            2. OR use the simple slider approach<br>
-            3. Set X and Y start/end positions<br>
-            4. Click "📊 Calculate Golden Ratio" to measure
+            <strong>🎯 How to Select:</strong><br>
+            1. Use the sliders below to set X and Y coordinates<br>
+            2. Preview shows your selection in real-time<br>
+            3. The blue box highlights your selected area<br>
+            4. Click "Calculate" when ready
             </div>
         """, unsafe_allow_html=True)
         
         # Get image dimensions
-        img_width, img_height = st.session_state.image.size
+        img_width, img_height = st.session_state.original_image.size
         
-        # Display image
-        st.image(st.session_state.image, use_column_width=True, caption=f"Image: {img_width}×{img_height} px")
+        st.write(f"**Image Size:** {img_width}×{img_height} pixels")
         
-        st.write("---")
-        st.write("**📊 Select Area Using Coordinates:**")
+        # Create coordinate selection using columns for better layout
+        st.write("**Set Selection Coordinates:**")
         
-        # Use 4 columns for easier input
-        col_a, col_b, col_c, col_d = st.columns(4)
+        col_a, col_b = st.columns(2)
         
         with col_a:
-            x_start = st.number_input("X Start", value=0, min_value=0, max_value=img_width, step=10)
+            st.write("**Horizontal (X):**")
+            x_start = st.slider("X Start", min_value=0, max_value=img_width-10, value=0, step=5, key="x_start")
+            x_end = st.slider("X End", min_value=x_start+10, max_value=img_width, value=min(100, img_width), step=5, key="x_end")
         
         with col_b:
-            y_start = st.number_input("Y Start", value=0, min_value=0, max_value=img_height, step=10)
+            st.write("**Vertical (Y):**")
+            y_start = st.slider("Y Start", min_value=0, max_value=img_height-10, value=0, step=5, key="y_start")
+            y_end = st.slider("Y End", min_value=y_start+10, max_value=img_height, value=min(100, img_height), step=5, key="y_end")
         
-        with col_c:
-            x_end = st.number_input("X End", value=min(100, img_width), min_value=0, max_value=img_width, step=10)
+        # Show coordinates
+        st.success(f"✅ Selection: X({x_start}-{x_end}), Y({y_start}-{y_end}) | Size: {x_end-x_start}×{y_end-y_start}px")
         
-        with col_d:
-            y_end = st.number_input("Y End", value=min(100, img_height), min_value=0, max_value=img_height, step=10)
+        # Create preview with selection box
+        preview_image = st.session_state.original_image.copy()
+        draw = ImageDraw.Draw(preview_image, 'RGBA')
         
-        # Show preview with selection
-        if x_start < x_end and y_start < y_end:
-            img_preview = st.session_state.image.copy()
-            draw = ImageDraw.Draw(img_preview, 'RGBA')
-            
-            # Draw selection rectangle
-            draw.rectangle(
-                [x_start, y_start, x_end, y_end],
-                outline=(50, 184, 198),
-                width=3,
-                fill=(50, 184, 198, 50)
-            )
-            
-            st.image(img_preview, use_column_width=True, caption="Preview with selection")
-            st.success(f"✅ Selection: ({int(x_start)}, {int(y_start)}) to ({int(x_end)}, {int(y_end)})")
+        # Draw selection rectangle
+        draw.rectangle(
+            [x_start, y_start, x_end, y_end],
+            outline=(50, 184, 198),
+            width=3,
+            fill=(50, 184, 198, 30)
+        )
+        
+        # Draw dimension labels
+        draw.text((x_start + 5, y_start - 20), f"{x_end-x_start}px", fill=(50, 184, 198))
+        draw.text((x_start - 35, y_start + 5), f"{y_end-y_start}px", fill=(50, 184, 198))
+        
+        st.image(preview_image, use_column_width=True, caption="Preview with Selection")
         
         # Calculate button
         if st.button("📊 Calculate Golden Ratio", type="primary", use_container_width=True):
@@ -173,7 +172,7 @@ if st.session_state.image is not None:
             height = abs(y_end - y_start)
             
             if width < 10 or height < 10:
-                st.error("❌ Selection too small. Please select an area larger than 10×10 pixels.")
+                st.error("❌ Selection too small. Minimum size is 10×10 pixels.")
             else:
                 long_side = max(width, height)
                 short_side = min(width, height)
@@ -192,12 +191,13 @@ if st.session_state.image is not None:
                     'score': score,
                     'status': status,
                     'color': color,
-                    'x_start': int(x_start),
-                    'y_start': int(y_start),
-                    'x_end': int(x_end),
-                    'y_end': int(y_end)
+                    'x_start': x_start,
+                    'y_start': y_start,
+                    'x_end': x_end,
+                    'y_end': y_end
                 }
-                st.success("✅ Calculation complete! See results on the right.")
+                st.success("✅ Calculation complete!")
+                st.balloons()
     
     with col2:
         st.subheader("📈 Results")
@@ -225,7 +225,7 @@ if st.session_state.image is not None:
             st.markdown(f"""
                 <div class='metric-box'>
                     <strong>Dimensions:</strong><br>
-                    {int(m['long_side'])} × {int(m['short_side'])} px
+                    {int(m['long_side'])} × {int(m['short_side'])} pixels
                 </div>
             """, unsafe_allow_html=True)
             
@@ -253,10 +253,14 @@ Golden Ratio (φ): {GOLDEN_RATIO:.4f}
 Difference: {m['difference']:.4f}
 
 Dimensions: {int(m['long_side'])} × {int(m['short_side'])} pixels
-Selection: ({m['x_start']}, {m['y_start']}) to ({m['x_end']}, {m['y_end']})
+Selection: ({int(m['x_start'])}, {int(m['y_start'])}) to ({int(m['x_end'])}, {int(m['y_end'])})
 
 Score: {m['score']}/100
 Status: {m['status']}
+
+Analysis:
+The golden ratio (φ ≈ 1.618) is a special proportion found in nature and art.
+Your selection {'is very close to' if m['score'] > 85 else 'is close to' if m['score'] > 70 else 'is somewhat close to' if m['score'] > 50 else 'is not very close to'} the perfect golden ratio.
 """
             st.download_button(
                 label="⬇️ Download Results",
@@ -266,17 +270,26 @@ Status: {m['status']}
                 use_container_width=True
             )
         else:
-            st.info("📊 Enter coordinates and click Calculate to see results")
+            st.info("📊 Adjust sliders and click 'Calculate' to see results here")
     
     # Reset button
     st.write("---")
     if st.button("🔄 Reset & Load New Image", use_container_width=True):
-        st.session_state.image = None
+        st.session_state.original_image = None
         st.session_state.measurements = None
         st.rerun()
 
 else:
     st.info("👈 Upload an image or take a photo from the sidebar to get started!")
+    
+    st.markdown("""
+    ### 🎯 Features
+    - 📸 Upload images or capture with camera
+    - 🎨 Adjust selection with smooth sliders
+    - 📊 Calculate golden ratio instantly
+    - 📥 Download your measurements
+    - 📱 Works on all devices
+    """)
 
 # About section
 with st.expander("ℹ️ About Golden Ratio"):
@@ -289,21 +302,19 @@ with st.expander("ℹ️ About Golden Ratio"):
     - Flower petals and seeds
     - Seashells and spiral galaxies
     - Human body proportions
-    - Snail shells
     
     **Used in Art & Design:**
-    - Renaissance paintings (Leonardo da Vinci)
-    - Modern architecture (Le Corbusier)
+    - Renaissance paintings
+    - Modern architecture
     - Photography composition
     - Web design layouts
     
     **This Calculator:**
     1. Upload or capture an image
-    2. Specify an area using coordinates
+    2. Adjust sliders to select an area
     3. See how close it is to φ
     4. Score: 0-100 (100 = perfect golden ratio)
     """)
 
 st.markdown("---")
-st.markdown("<p style='text-align: center; color: #626c71; font-size: 12px;'>Golden Ratio Calculator • Built with Streamlit</p>", unsafe_allow_html=True)
-
+st.markdown("<p style='text-align: center; color: #626c71; font-size: 12px;'>Golden Ratio Calculator • Built with Streamlit • No external dependencies needed</p>", unsafe_allow_html=True)
