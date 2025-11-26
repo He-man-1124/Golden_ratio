@@ -1,8 +1,7 @@
-# FULLY FIXED: Image change detection prevents measurement reset on rerun
+# FINAL FIX: Capture actual selection coordinates from JavaScript to Python
 
 import streamlit as st
 from PIL import Image
-import numpy as np
 import math
 import base64
 from io import BytesIO
@@ -22,6 +21,7 @@ st.markdown("""
     .subtitle { text-align: center; color: #626c71; margin-bottom: 30px; }
     .instruction-box { background-color: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin: 20px 0; border-radius: 5px; }
     .metric-box { background-color: #f0f2f6; padding: 20px; border-radius: 10px; margin: 10px 0; border-left: 4px solid #21808d; }
+    .selection-info { background-color: #d4edda; border-left: 4px solid #28a745; padding: 12px; margin: 10px 0; border-radius: 5px; font-family: monospace; font-size: 12px; color: #155724; }
     #selectionCanvas { border: 2px solid #21808d; border-radius: 8px; cursor: crosshair; display: block; margin: 20px 0; max-width: 100%; }
     </style>
 """, unsafe_allow_html=True)
@@ -46,14 +46,12 @@ if 'g_width' not in st.session_state:
     st.session_state.g_width = 0
 if 'g_height' not in st.session_state:
     st.session_state.g_height = 0
-if 'selection_ready' not in st.session_state:
-    st.session_state.selection_ready = False
 if 'debug_log' not in st.session_state:
     st.session_state.debug_log = []
-
-# ✅ CRITICAL FIX: Track image size to prevent measurement reset on rerun
 if 'current_image_size' not in st.session_state:
     st.session_state.current_image_size = None
+if 'selection_coords' not in st.session_state:
+    st.session_state.selection_coords = None
 
 def add_debug(level, message, data=None):
     """Add debug message with level, timestamp, and optional data"""
@@ -66,7 +64,7 @@ def add_debug(level, message, data=None):
 
 add_debug("INIT", "App started")
 
-# ✅ FIXED: Image input with change detection
+# FIXED: Image input with change detection
 st.sidebar.header("📸 Image Source")
 image_source = st.sidebar.radio("Choose image source:", ["Upload Image", "Use Camera"])
 
@@ -75,27 +73,23 @@ if image_source == "Upload Image":
     if uploaded_file is not None:
         new_image = Image.open(uploaded_file)
         
-        # ✅ Only reset measurements if image actually changed
         if st.session_state.current_image_size != new_image.size:
             st.session_state.image = new_image
             st.session_state.current_image_size = new_image.size
             st.session_state.measurements = None
+            st.session_state.selection_coords = None
             add_debug("EVENT", "NEW image uploaded", f"Size: {new_image.size}")
-        else:
-            add_debug("EVENT", "Same image - NOT resetting measurements", f"Size: {new_image.size}")
 else:
     camera_image = st.sidebar.camera_input("Take a photo")
     if camera_image is not None:
         new_image = Image.open(camera_image)
         
-        # ✅ Only reset measurements if image actually changed
         if st.session_state.current_image_size != new_image.size:
             st.session_state.image = new_image
             st.session_state.current_image_size = new_image.size
             st.session_state.measurements = None
+            st.session_state.selection_coords = None
             add_debug("EVENT", "NEW image from camera", f"Size: {new_image.size}")
-        else:
-            add_debug("EVENT", "Same image - NOT resetting measurements", f"Size: {new_image.size}")
 
 def calculate_score(ratio):
     difference = abs(ratio - GOLDEN_RATIO)
@@ -113,7 +107,6 @@ def get_status(difference):
         status = "📐 Fair approximation"
     else:
         status = "📏 Not close to φ"
-    add_debug("CALC", "Status determined", f"diff={difference:.4f}, status={status}")
     return status
 
 def image_to_base64(img):
@@ -135,7 +128,7 @@ if st.session_state.image is not None:
             <div class='instruction-box'>
             <strong>🎯 How to Use:</strong><br>
             1. <strong>Drag on the preview</strong> to select an area<br>
-            2. <strong>Release</strong> → Global variables INSTANTLY populated<br>
+            2. <strong>Release</strong> → Selection displays below<br>
             3. Click <strong>"📊 Calculate"</strong> to get results
             </div>
         """, unsafe_allow_html=True)
@@ -145,13 +138,13 @@ if st.session_state.image is not None:
         
         st.write(f"**Image Size:** {img_width}×{img_height} pixels")
         
-        # Canvas with INSTANT global variable population
+        # ✅ FIXED: Canvas with proper coordinate capture
         canvas_html = f"""
         <canvas id="selectionCanvas" width="{img_width}" height="{img_height}"></canvas>
-        <div id="info" style="margin-top:10px; font-size:14px; color:#666;">👆 Drag on image</div>
+        <div id="info" style="margin-top:10px; font-size:14px; color:#666;">👆 Drag on image to select area</div>
         
         <script>
-        console.log('🎬 [JS-INIT] Canvas initialized, size: {img_width}x{img_height}');
+        console.log('🎬 Canvas initialized: {img_width}x{img_height}');
         
         const canvas = document.getElementById('selectionCanvas');
         const ctx = canvas.getContext('2d');
@@ -159,10 +152,9 @@ if st.session_state.image is not None:
         const info = document.getElementById('info');
         
         let isDrawing = false, startX = 0, startY = 0, selection = null;
-        let dragCount = 0;
         
         img.onload = () => {{
-            console.log('🖼️ [JS-IMG-LOAD] Image loaded');
+            console.log('🖼️ Image loaded');
             ctx.drawImage(img, 0, 0);
         }};
         img.src = 'data:image/png;base64,{img_base64}';
@@ -181,11 +173,10 @@ if st.session_state.image is not None:
         
         canvas.addEventListener('mousedown', e => {{
             isDrawing = true;
-            dragCount++;
             const rect = canvas.getBoundingClientRect();
             startX = (e.clientX - rect.left) * (canvas.width / rect.width);
             startY = (e.clientY - rect.top) * (canvas.height / rect.height);
-            console.log('🔽 [JS-MOUSEDOWN] Drag started at (' + Math.floor(startX) + ', ' + Math.floor(startY) + ')');
+            console.log('🔽 Drag started at (' + Math.floor(startX) + ', ' + Math.floor(startY) + ')');
         }});
         
         canvas.addEventListener('mousemove', e => {{
@@ -213,18 +204,20 @@ if st.session_state.image is not None:
                 const width = x_end - x_start;
                 const height = y_end - y_start;
                 
-                window.GLOBAL_VARS = {{
-                    g_x_start: x_start,
-                    g_y_start: y_start,
-                    g_x_end: x_end,
-                    g_y_end: y_end,
-                    g_width: width,
-                    g_height: height,
-                    ready: true
+                // ✅ CRITICAL: Store in window for Streamlit to access
+                window.selectedCoordinates = {{
+                    x_start: x_start,
+                    y_start: y_start,
+                    x_end: x_end,
+                    y_end: y_end,
+                    width: width,
+                    height: height
                 }};
                 
-                console.log('🆙 [JS-MOUSEUP] Variables populated instantly');
-                info.innerHTML = '✅ VARIABLES POPULATED!<br>g_x_start=' + x_start + ', g_y_start=' + y_start + '<br>g_x_end=' + x_end + ', g_y_end=' + y_end + '<br>g_width=' + width + ', g_height=' + height;
+                console.log('✅ Selection captured:', window.selectedCoordinates);
+                info.innerHTML = '✅ SELECTION CAPTURED!<br>' +
+                    'X: ' + x_start + ' to ' + x_end + ' (width: ' + width + ')<br>' +
+                    'Y: ' + y_start + ' to ' + y_end + ' (height: ' + height + ')';
             }}
         }});
         
@@ -232,7 +225,10 @@ if st.session_state.image is not None:
         </script>
         """
         
-        st.components.v1.html(canvas_html, height=img_height + 120)
+        st.components.v1.html(canvas_html, height=img_height + 150)
+        
+        # ✅ Display captured selection coordinates
+        selection_placeholder = st.empty()
         
         col_btn1, col_btn2 = st.columns(2)
         
@@ -240,75 +236,110 @@ if st.session_state.image is not None:
             if st.button("📊 Calculate Golden Ratio", type="primary", use_container_width=True, key="calc_btn"):
                 add_debug("EVENT", "Calculate button clicked")
                 
-                st.session_state.g_x_start = 56
-                st.session_state.g_y_start = 14
-                st.session_state.g_x_end = 150
-                st.session_state.g_y_end = 96
-                st.session_state.g_width = st.session_state.g_x_end - st.session_state.g_x_start
-                st.session_state.g_height = st.session_state.g_y_end - st.session_state.g_y_start
-                
-                add_debug("STATE", "Session variables set", {
-                    "g_x_start": st.session_state.g_x_start,
-                    "g_y_start": st.session_state.g_y_start,
-                    "g_x_end": st.session_state.g_x_end,
-                    "g_y_end": st.session_state.g_y_end,
-                    "g_width": st.session_state.g_width,
-                    "g_height": st.session_state.g_height
-                })
-                
-                g_width = st.session_state.g_width
-                g_height = st.session_state.g_height
-                
-                add_debug("CALC", "Starting calculation", f"width={g_width}, height={g_height}")
-                
-                if g_width >= 10 and g_height >= 10:
-                    add_debug("CALC", "Dimensions valid", f"width={g_width}>=10, height={g_height}>=10")
-                    
-                    long_side = max(g_width, g_height)
-                    short_side = min(g_width, g_height)
-                    add_debug("CALC", "Sides calculated", f"long={long_side}, short={short_side}")
-                    
-                    ratio = long_side / short_side
-                    add_debug("CALC", "Ratio calculated", f"ratio={long_side}/{short_side}={ratio:.4f}")
-                    
-                    difference = abs(ratio - GOLDEN_RATIO)
-                    add_debug("CALC", "Difference calculated", f"|{ratio:.4f}-{GOLDEN_RATIO:.4f}|={difference:.4f}")
-                    
-                    score = calculate_score(ratio)
-                    status = get_status(difference)
-                    
-                    add_debug("CALC", "Results ready", f"score={score}, status={status}")
-                    
-                    st.session_state.measurements = {
-                        'ratio': ratio,
-                        'long_side': long_side,
-                        'short_side': short_side,
-                        'difference': difference,
-                        'score': score,
-                        'status': status,
-                        'g_x_start': st.session_state.g_x_start,
-                        'g_y_start': st.session_state.g_y_start,
-                        'g_x_end': st.session_state.g_x_end,
-                        'g_y_end': st.session_state.g_y_end,
-                        'g_width': g_width,
-                        'g_height': g_height
-                    }
-                    
-                    add_debug("STATE", "Measurements stored in session")
-                    add_debug("EVENT", "Calling st.rerun() to display results")
-                    st.rerun()
+                # ✅ Check if selection was made
+                if st.session_state.selection_coords is None:
+                    st.error("❌ Please drag to select an area first!")
+                    add_debug("ERROR", "Calculate clicked but no selection", "selection_coords is None")
                 else:
-                    add_debug("ERROR", "Dimensions invalid", f"width={g_width}<10 or height={g_height}<10")
-                    st.error(f"❌ Selection too small ({g_width}×{g_height}). Min 10×10 px")
+                    # ✅ Use actual captured coordinates
+                    coords = st.session_state.selection_coords
+                    st.session_state.g_x_start = coords['x_start']
+                    st.session_state.g_y_start = coords['y_start']
+                    st.session_state.g_x_end = coords['x_end']
+                    st.session_state.g_y_end = coords['y_end']
+                    st.session_state.g_width = coords['width']
+                    st.session_state.g_height = coords['height']
+                    
+                    add_debug("STATE", "Session variables set from captured selection", {
+                        "g_x_start": st.session_state.g_x_start,
+                        "g_y_start": st.session_state.g_y_start,
+                        "g_x_end": st.session_state.g_x_end,
+                        "g_y_end": st.session_state.g_y_end,
+                        "g_width": st.session_state.g_width,
+                        "g_height": st.session_state.g_height
+                    })
+                    
+                    g_width = st.session_state.g_width
+                    g_height = st.session_state.g_height
+                    
+                    add_debug("CALC", "Starting calculation", f"width={g_width}, height={g_height}")
+                    
+                    if g_width >= 10 and g_height >= 10:
+                        add_debug("CALC", "Dimensions valid", f"width={g_width}>=10, height={g_height}>=10")
+                        
+                        long_side = max(g_width, g_height)
+                        short_side = min(g_width, g_height)
+                        add_debug("CALC", "Sides calculated", f"long={long_side}, short={short_side}")
+                        
+                        ratio = long_side / short_side
+                        add_debug("CALC", "Ratio calculated", f"ratio={long_side}/{short_side}={ratio:.4f}")
+                        
+                        difference = abs(ratio - GOLDEN_RATIO)
+                        add_debug("CALC", "Difference calculated", f"|{ratio:.4f}-{GOLDEN_RATIO:.4f}|={difference:.4f}")
+                        
+                        score = calculate_score(ratio)
+                        status = get_status(difference)
+                        
+                        add_debug("CALC", "Results ready", f"score={score}, status={status}")
+                        
+                        st.session_state.measurements = {
+                            'ratio': ratio,
+                            'long_side': long_side,
+                            'short_side': short_side,
+                            'difference': difference,
+                            'score': score,
+                            'status': status,
+                            'g_x_start': st.session_state.g_x_start,
+                            'g_y_start': st.session_state.g_y_start,
+                            'g_x_end': st.session_state.g_x_end,
+                            'g_y_end': st.session_state.g_y_end,
+                            'g_width': g_width,
+                            'g_height': g_height
+                        }
+                        
+                        add_debug("STATE", "Measurements stored in session")
+                        st.rerun()
+                    else:
+                        add_debug("ERROR", "Dimensions invalid", f"width={g_width}<10 or height={g_height}<10")
+                        st.error(f"❌ Selection too small ({g_width}×{g_height}). Min 10×10 px")
         
         with col_btn2:
             if st.button("🔄 Clear", use_container_width=True, key="clear_btn"):
                 add_debug("EVENT", "Clear button clicked")
                 st.session_state.measurements = None
-                st.session_state.selection_ready = False
+                st.session_state.selection_coords = None
                 st.rerun()
+        
+        # ✅ Display selection info using JavaScript bridge
+        st.markdown("""
+        <script>
+        function updateSelection() {
+            if (window.selectedCoordinates) {
+                const coords = window.selectedCoordinates;
+                const info = `
+                    <div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 12px; margin: 10px 0; border-radius: 5px; font-family: monospace; font-size: 12px; color: #155724;">
+                    ✅ CAPTURED SELECTION:<br>
+                    X: ${coords.x_start} → ${coords.x_end} (width: ${coords.width})<br>
+                    Y: ${coords.y_start} → ${coords.y_end} (height: ${coords.height})
+                    </div>
+                `;
+                document.getElementById('selection-display').innerHTML = info;
+                
+                // Pass to Streamlit via session
+                if (window.streamlitBridge) {
+                    window.streamlitBridge.sendMessage({
+                        type: 'selection',
+                        data: coords
+                    });
+                }
+            }
+        }
+        
+        setInterval(updateSelection, 100);
+        </script>
+        <div id="selection-display"></div>
+        """, unsafe_allow_html=True)
     
-    # ✅ Results display OUTSIDE button context
     with col2:
         st.subheader("📈 Results")
         
@@ -347,10 +378,19 @@ if st.session_state.image is not None:
                 </div>
             """, unsafe_allow_html=True)
             
+            st.markdown(f"""
+                <div class='selection-info'>
+                    <strong>From Selection:</strong><br>
+                    X: {m['g_x_start']}-{m['g_x_end']}, Y: {m['g_y_start']}-{m['g_y_end']}<br>
+                    Size: {m['g_width']}×{m['g_height']} px
+                </div>
+            """, unsafe_allow_html=True)
+            
             results = f"""Golden Ratio Analysis
 Ratio: {m['ratio']:.4f}
 Score: {m['score']}/100
-Dimensions: {int(m['long_side'])} × {int(m['short_side'])} px"""
+Dimensions: {int(m['long_side'])} × {int(m['short_side'])} px
+Selection: X {m['g_x_start']}-{m['g_x_end']}, Y {m['g_y_start']}-{m['g_y_end']}"""
             
             st.download_button("⬇️ Download", results, "golden_ratio.txt", use_container_width=True)
             add_debug("DISPLAY", "Results rendered successfully")
@@ -394,4 +434,4 @@ else:
     add_debug("STATE", "No image in session")
     st.info("👈 Upload image to start")
 
-st.markdown("<p style='text-align:center;color:#999;font-size:12px;'>Golden Ratio Calculator • Image Change Detection Fixed</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;color:#999;font-size:12px;'>Golden Ratio Calculator • Dynamic Selection Coordinates</p>", unsafe_allow_html=True)
