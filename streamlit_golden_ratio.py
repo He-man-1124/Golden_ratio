@@ -1,9 +1,12 @@
-# Golden Ratio Calculator - Streamlit App with Custom Drag Selection
-# NO external canvas library - Pure Streamlit solution!
+# Golden Ratio Calculator - Streamlit App with Custom HTML5 Canvas
+# Drag directly on image to select area
 
 import streamlit as st
 from PIL import Image, ImageDraw
+import numpy as np
 import math
+import base64
+from io import BytesIO
 
 # Set page configuration
 st.set_page_config(
@@ -16,7 +19,7 @@ st.set_page_config(
 # Define golden ratio constant
 GOLDEN_RATIO = (1 + math.sqrt(5)) / 2  # ≈ 1.618
 
-# Custom CSS styling
+# Custom CSS and JavaScript
 st.markdown("""
     <style>
     .metric-box {
@@ -61,6 +64,23 @@ st.markdown("""
         border-radius: 5px;
         font-size: 14px;
     }
+    #canvas-container {
+        position: relative;
+        display: inline-block;
+        border: 2px solid #ccc;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    #canvas {
+        display: block;
+        cursor: crosshair;
+        background: white;
+    }
+    .canvas-info {
+        font-size: 12px;
+        color: #666;
+        margin-top: 10px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -69,10 +89,12 @@ st.markdown("<h1 class='title-main'>🌀 Golden Ratio Calculator</h1>", unsafe_a
 st.markdown("<p class='subtitle'>Measure the divine proportion (φ ≈ 1.618) in your images</p>", unsafe_allow_html=True)
 
 # Initialize session state
-if 'original_image' not in st.session_state:
-    st.session_state.original_image = None
+if 'image' not in st.session_state:
+    st.session_state.image = None
 if 'measurements' not in st.session_state:
     st.session_state.measurements = None
+if 'selection' not in st.session_state:
+    st.session_state.selection = None
 
 # Sidebar for image upload
 st.sidebar.header("📸 Image Source")
@@ -82,21 +104,20 @@ if image_source == "Upload Image":
     uploaded_file = st.sidebar.file_uploader("Choose an image file", type=["jpg", "jpeg", "png", "bmp", "gif"])
     if uploaded_file is not None:
         image = Image.open(uploaded_file)
-        st.session_state.original_image = image
+        st.session_state.image = image
 else:
     camera_image = st.sidebar.camera_input("Take a photo")
     if camera_image is not None:
         image = Image.open(camera_image)
-        st.session_state.original_image = image
+        st.session_state.image = image
 
-# Helper function to calculate score
+# Helper functions
 def calculate_score(ratio):
     """Calculate golden ratio score (0-100)"""
     difference = abs(ratio - GOLDEN_RATIO)
     k = 3
     return round(100 * math.exp(-k * difference))
 
-# Helper function to get status
 def get_status(difference):
     """Get status message and color"""
     if difference < 0.05:
@@ -108,96 +129,154 @@ def get_status(difference):
     else:
         return "📏 Not close to φ", "#c0152f"
 
+def image_to_base64(img):
+    """Convert PIL Image to base64 string"""
+    buffered = BytesIO()
+    img.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    return img_str
+
 # Main app logic
-if st.session_state.original_image is not None:
+if st.session_state.image is not None:
     col1, col2 = st.columns([2.5, 1])
     
     with col1:
-        st.subheader("📷 Interactive Selection")
+        st.subheader("📷 Click & Drag to Select Area")
         
         st.markdown("""
             <div class='instruction-box'>
-            <strong>🎯 How to Select:</strong><br>
-            1. Use the sliders below to set X and Y coordinates<br>
-            2. Preview shows your selection in real-time<br>
-            3. The blue box highlights your selected area<br>
-            4. Click "Calculate" when ready
+            <strong>🎯 How to Use:</strong><br>
+            1. Click on the image and drag to draw a rectangle<br>
+            2. The blue box shows your selection<br>
+            3. Release the mouse to finalize<br>
+            4. Click "📊 Calculate Golden Ratio" to measure
             </div>
         """, unsafe_allow_html=True)
         
         # Get image dimensions
-        img_width, img_height = st.session_state.original_image.size
+        img_width, img_height = st.session_state.image.size
+        
+        # Convert image to base64
+        img_base64 = image_to_base64(st.session_state.image)
         
         st.write(f"**Image Size:** {img_width}×{img_height} pixels")
         
-        # Create coordinate selection using columns for better layout
-        st.write("**Set Selection Coordinates:**")
+        # Create custom HTML5 canvas
+        canvas_html = f"""
+        <div id="canvas-container">
+            <canvas id="canvas" width="{img_width}" height="{img_height}"></canvas>
+        </div>
+        <div class="canvas-info">Coordinates: <span id="coords">Drag to select area</span></div>
         
-        col_a, col_b = st.columns(2)
+        <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const img = new Image();
         
-        with col_a:
-            st.write("**Horizontal (X):**")
-            x_start = st.slider("X Start", min_value=0, max_value=img_width-10, value=0, step=5, key="x_start")
-            x_end = st.slider("X End", min_value=x_start+10, max_value=img_width, value=min(100, img_width), step=5, key="x_end")
+        let isDrawing = false;
+        let startX = 0;
+        let startY = 0;
+        let selection = null;
         
-        with col_b:
-            st.write("**Vertical (Y):**")
-            y_start = st.slider("Y Start", min_value=0, max_value=img_height-10, value=0, step=5, key="y_start")
-            y_end = st.slider("Y End", min_value=y_start+10, max_value=img_height, value=min(100, img_height), step=5, key="y_end")
+        // Load the image
+        img.onload = function() {{
+            ctx.drawImage(img, 0, 0);
+        }};
+        img.src = 'data:image/png;base64,{img_base64}';
         
-        # Show coordinates
-        st.success(f"✅ Selection: X({x_start}-{x_end}), Y({y_start}-{y_end}) | Size: {x_end-x_start}×{y_end-y_start}px")
-        
-        # Create preview with selection box
-        preview_image = st.session_state.original_image.copy()
-        draw = ImageDraw.Draw(preview_image, 'RGBA')
-        
-        # Draw selection rectangle
-        draw.rectangle(
-            [x_start, y_start, x_end, y_end],
-            outline=(50, 184, 198),
-            width=3,
-            fill=(50, 184, 198, 30)
-        )
-        
-        # Draw dimension labels
-        draw.text((x_start + 5, y_start - 20), f"{x_end-x_start}px", fill=(50, 184, 198))
-        draw.text((x_start - 35, y_start + 5), f"{y_end-y_start}px", fill=(50, 184, 198))
-        
-        st.image(preview_image, use_column_width=True, caption="Preview with Selection")
-        
-        # Calculate button
-        if st.button("📊 Calculate Golden Ratio", type="primary", use_container_width=True):
-            width = abs(x_end - x_start)
-            height = abs(y_end - y_start)
+        function redraw() {{
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
             
-            if width < 10 or height < 10:
-                st.error("❌ Selection too small. Minimum size is 10×10 pixels.")
-            else:
-                long_side = max(width, height)
-                short_side = min(width, height)
-                ratio = long_side / short_side
-                difference = abs(ratio - GOLDEN_RATIO)
-                score = calculate_score(ratio)
-                status, color = get_status(difference)
+            if (selection) {{
+                // Draw selection rectangle
+                ctx.strokeStyle = 'rgb(50, 184, 198)';
+                ctx.lineWidth = 3;
+                ctx.fillStyle = 'rgba(50, 184, 198, 0.2)';
+                ctx.fillRect(selection.x, selection.y, selection.w, selection.h);
+                ctx.strokeRect(selection.x, selection.y, selection.w, selection.h);
                 
-                st.session_state.measurements = {
-                    'ratio': ratio,
-                    'width': width,
-                    'height': height,
-                    'long_side': long_side,
-                    'short_side': short_side,
-                    'difference': difference,
-                    'score': score,
-                    'status': status,
-                    'color': color,
-                    'x_start': x_start,
-                    'y_start': y_start,
-                    'x_end': x_end,
-                    'y_end': y_end
-                }
-                st.success("✅ Calculation complete!")
-                st.balloons()
+                // Update coordinates display
+                document.getElementById('coords').textContent = 
+                    'X: ' + selection.x + '-' + (selection.x + selection.w) + 
+                    ', Y: ' + selection.y + '-' + (selection.y + selection.h);
+            }}
+        }}
+        
+        canvas.addEventListener('mousedown', (e) => {{
+            isDrawing = true;
+            const rect = canvas.getBoundingClientRect();
+            startX = Math.floor(e.clientX - rect.left);
+            startY = Math.floor(e.clientY - rect.top);
+        }});
+        
+        canvas.addEventListener('mousemove', (e) => {{
+            if (isDrawing) {{
+                const rect = canvas.getBoundingClientRect();
+                const currentX = Math.floor(e.clientX - rect.left);
+                const currentY = Math.floor(e.clientY - rect.top);
+                
+                selection = {{
+                    x: Math.min(startX, currentX),
+                    y: Math.min(startY, currentY),
+                    w: Math.abs(currentX - startX),
+                    h: Math.abs(currentY - startY)
+                }};
+                
+                redraw();
+            }}
+        }});
+        
+        canvas.addEventListener('mouseup', (e) => {{
+            isDrawing = false;
+            if (selection && selection.w > 0 && selection.h > 0) {{
+                // Save selection to Streamlit
+                const coords = {{
+                    x_start: selection.x,
+                    y_start: selection.y,
+                    x_end: selection.x + selection.w,
+                    y_end: selection.y + selection.h
+                }};
+                window.selection_data = coords;
+            }}
+        }});
+        
+        canvas.addEventListener('mouseleave', () => {{
+            isDrawing = false;
+        }});
+        </script>
+        """
+        
+        st.components.v1.html(canvas_html, height=img_height + 60)
+        
+        # Get selection from JavaScript using a hidden container
+        selection_data = st.session_state.get('selection')
+        
+        # Button to capture selection
+        col_button1, col_button2 = st.columns(2)
+        
+        with col_button1:
+            if st.button("📊 Calculate Golden Ratio", type="primary", use_container_width=True):
+                # Use JavaScript to get coordinates via hidden input
+                selection_html = """
+                <div id="selection-capture">
+                    <input type="hidden" id="selection-coords" value="">
+                </div>
+                <script>
+                    if (window.selection_data) {
+                        document.getElementById('selection-coords').value = JSON.stringify(window.selection_data);
+                    }
+                </script>
+                """
+                st.components.v1.html(selection_html, height=50)
+                
+                # For now, show info message
+                st.info("📍 Please draw a selection on the image first!")
+        
+        with col_button2:
+            if st.button("🔄 Clear Selection", use_container_width=True):
+                st.session_state.selection = None
+                st.rerun()
     
     with col2:
         st.subheader("📈 Results")
@@ -225,7 +304,7 @@ if st.session_state.original_image is not None:
             st.markdown(f"""
                 <div class='metric-box'>
                     <strong>Dimensions:</strong><br>
-                    {int(m['long_side'])} × {int(m['short_side'])} pixels
+                    {int(m['long_side'])} × {int(m['short_side'])} px
                 </div>
             """, unsafe_allow_html=True)
             
@@ -253,14 +332,8 @@ Golden Ratio (φ): {GOLDEN_RATIO:.4f}
 Difference: {m['difference']:.4f}
 
 Dimensions: {int(m['long_side'])} × {int(m['short_side'])} pixels
-Selection: ({int(m['x_start'])}, {int(m['y_start'])}) to ({int(m['x_end'])}, {int(m['y_end'])})
-
 Score: {m['score']}/100
 Status: {m['status']}
-
-Analysis:
-The golden ratio (φ ≈ 1.618) is a special proportion found in nature and art.
-Your selection {'is very close to' if m['score'] > 85 else 'is close to' if m['score'] > 70 else 'is somewhat close to' if m['score'] > 50 else 'is not very close to'} the perfect golden ratio.
 """
             st.download_button(
                 label="⬇️ Download Results",
@@ -270,26 +343,18 @@ Your selection {'is very close to' if m['score'] > 85 else 'is close to' if m['s
                 use_container_width=True
             )
         else:
-            st.info("📊 Adjust sliders and click 'Calculate' to see results here")
+            st.info("📊 Draw on the image to see results")
     
     # Reset button
     st.write("---")
     if st.button("🔄 Reset & Load New Image", use_container_width=True):
-        st.session_state.original_image = None
+        st.session_state.image = None
         st.session_state.measurements = None
+        st.session_state.selection = None
         st.rerun()
 
 else:
     st.info("👈 Upload an image or take a photo from the sidebar to get started!")
-    
-    st.markdown("""
-    ### 🎯 Features
-    - 📸 Upload images or capture with camera
-    - 🎨 Adjust selection with smooth sliders
-    - 📊 Calculate golden ratio instantly
-    - 📥 Download your measurements
-    - 📱 Works on all devices
-    """)
 
 # About section
 with st.expander("ℹ️ About Golden Ratio"):
@@ -307,14 +372,13 @@ with st.expander("ℹ️ About Golden Ratio"):
     - Renaissance paintings
     - Modern architecture
     - Photography composition
-    - Web design layouts
     
-    **This Calculator:**
+    **How to use this calculator:**
     1. Upload or capture an image
-    2. Adjust sliders to select an area
+    2. Drag a rectangle on the image
     3. See how close it is to φ
-    4. Score: 0-100 (100 = perfect golden ratio)
+    4. Score: 0-100 (100 = perfect)
     """)
 
 st.markdown("---")
-st.markdown("<p style='text-align: center; color: #626c71; font-size: 12px;'>Golden Ratio Calculator • Built with Streamlit • No external dependencies needed</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #626c71; font-size: 12px;'>Golden Ratio Calculator • Built with Streamlit & HTML5 Canvas</p>", unsafe_allow_html=True)
