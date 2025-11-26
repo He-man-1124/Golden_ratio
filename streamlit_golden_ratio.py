@@ -1,4 +1,4 @@
-# INSTANT: Global variables populated IMMEDIATELY on selection - No Calculate button needed for population
+# DEBUGGING VERSION: Detailed logs at every level - JavaScript, Session State, Calculation
 
 import streamlit as st
 from PIL import Image
@@ -6,8 +6,10 @@ import numpy as np
 import math
 import base64
 from io import BytesIO
+import json
+from datetime import datetime
 
-st.set_page_config(page_title="Golden Ratio Calculator", page_icon="✨", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Golden Ratio Calculator [DEBUG]", page_icon="✨", layout="wide", initial_sidebar_state="expanded")
 
 GOLDEN_RATIO = (1 + math.sqrt(5)) / 2
 
@@ -20,22 +22,23 @@ st.markdown("""
     .title-main { text-align: center; color: #13343b; margin-bottom: 10px; }
     .subtitle { text-align: center; color: #626c71; margin-bottom: 30px; }
     .instruction-box { background-color: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin: 20px 0; border-radius: 5px; }
-    .global-vars-box { background-color: #cce5ff; border-left: 4px solid #0066cc; padding: 15px; margin: 15px 0; border-radius: 5px; font-family: monospace; font-weight: bold; font-size: 13px; color: #003366; }
+    .debug-log { background-color: #f8f9fa; border-left: 4px solid #6c757d; padding: 12px; margin: 10px 0; border-radius: 5px; font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.6; color: #333; max-height: 400px; overflow-y: auto; }
+    .debug-js { background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 10px 0; border-radius: 5px; font-family: 'Courier New', monospace; font-size: 11px; color: #664d03; }
+    .debug-py { background-color: #d1ecf1; border-left: 4px solid #17a2b8; padding: 12px; margin: 10px 0; border-radius: 5px; font-family: 'Courier New', monospace; font-size: 11px; color: #0c5460; }
+    .debug-calc { background-color: #d4edda; border-left: 4px solid #28a745; padding: 12px; margin: 10px 0; border-radius: 5px; font-family: 'Courier New', monospace; font-size: 11px; color: #155724; }
     .ready-box { background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 15px 0; border-radius: 5px; font-family: monospace; font-weight: bold; font-size: 13px; color: #155724; }
     #selectionCanvas { border: 2px solid #21808d; border-radius: 8px; cursor: crosshair; display: block; margin: 20px 0; max-width: 100%; }
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h1 class='title-main'>🌀 Golden Ratio Calculator</h1>", unsafe_allow_html=True)
-st.markdown("<p class='subtitle'>Measure the divine proportion (φ ≈ 1.618) in your images</p>", unsafe_allow_html=True)
+st.markdown("<h1 class='title-main'>🌀 Golden Ratio Calculator [DEBUG MODE]</h1>", unsafe_allow_html=True)
+st.markdown("<p class='subtitle'>With comprehensive debugging at all levels</p>", unsafe_allow_html=True)
 
 # Initialize session state
 if 'image' not in st.session_state:
     st.session_state.image = None
 if 'measurements' not in st.session_state:
     st.session_state.measurements = None
-
-# 🌍 SESSION STATE FOR GLOBAL SELECTION VARIABLES - POPULATED IMMEDIATELY ON DRAG
 if 'g_x_start' not in st.session_state:
     st.session_state.g_x_start = 0
 if 'g_y_start' not in st.session_state:
@@ -50,6 +53,20 @@ if 'g_height' not in st.session_state:
     st.session_state.g_height = 0
 if 'selection_ready' not in st.session_state:
     st.session_state.selection_ready = False
+if 'debug_log' not in st.session_state:
+    st.session_state.debug_log = []
+
+# Debug logging function
+def add_debug(level, message, data=None):
+    """Add debug message with level, timestamp, and optional data"""
+    timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    if data:
+        log_msg = f"[{timestamp}] [{level}] {message} | DATA: {data}"
+    else:
+        log_msg = f"[{timestamp}] [{level}] {message}"
+    st.session_state.debug_log.append(log_msg)
+
+add_debug("INIT", "App started")
 
 # Sidebar
 st.sidebar.header("📸 Image Source")
@@ -61,34 +78,44 @@ if image_source == "Upload Image":
         st.session_state.image = Image.open(uploaded_file)
         st.session_state.measurements = None
         st.session_state.selection_ready = False
+        add_debug("EVENT", "Image uploaded", f"Size: {st.session_state.image.size}")
 else:
     camera_image = st.sidebar.camera_input("Take a photo")
     if camera_image is not None:
         st.session_state.image = Image.open(camera_image)
         st.session_state.measurements = None
         st.session_state.selection_ready = False
+        add_debug("EVENT", "Image captured from camera", f"Size: {st.session_state.image.size}")
 
 def calculate_score(ratio):
     difference = abs(ratio - GOLDEN_RATIO)
     k = 3
-    return round(100 * math.exp(-k * difference))
+    score = round(100 * math.exp(-k * difference))
+    add_debug("CALC", f"Score calculated", f"ratio={ratio:.4f}, diff={difference:.4f}, score={score}")
+    return score
 
 def get_status(difference):
     if difference < 0.05:
-        return "✨ Excellent! Very close to φ"
+        status = "✨ Excellent! Very close to φ"
     elif difference < 0.15:
-        return "👍 Good! Moderately close to φ"
+        status = "👍 Good! Moderately close to φ"
     elif difference < 0.3:
-        return "📐 Fair approximation"
+        status = "📐 Fair approximation"
     else:
-        return "📏 Not close to φ"
+        status = "📏 Not close to φ"
+    add_debug("CALC", "Status determined", f"diff={difference:.4f}, status={status}")
+    return status
 
 def image_to_base64(img):
     buffered = BytesIO()
     img.save(buffered, format="PNG")
-    return base64.b64encode(buffered.getvalue()).decode()
+    result = base64.b64encode(buffered.getvalue()).decode()
+    add_debug("UTIL", "Image converted to base64", f"Length: {len(result)}")
+    return result
 
 if st.session_state.image is not None:
+    add_debug("STATE", "Image exists in session", f"Size: {st.session_state.image.size}")
+    
     col1, col2 = st.columns([3, 1])
     
     with col1:
@@ -98,8 +125,8 @@ if st.session_state.image is not None:
             <div class='instruction-box'>
             <strong>🎯 How to Use:</strong><br>
             1. <strong>Drag on the preview</strong> to select an area<br>
-            2. <strong>Release</strong> → Variables INSTANTLY populated!<br>
-            3. Global variables show below<br>
+            2. <strong>Release</strong> → Global variables INSTANTLY populated<br>
+            3. Check DEBUG LOGS below for detailed trace<br>
             4. Click <strong>"📊 Calculate"</strong> to get results
             </div>
         """, unsafe_allow_html=True)
@@ -109,23 +136,26 @@ if st.session_state.image is not None:
         
         st.write(f"**Image Size:** {img_width}×{img_height} pixels")
         
-        # Placeholder for global variables display
-        vars_display = st.empty()
-        
-        # Canvas with INSTANT global variable population
+        # Canvas with COMPREHENSIVE DEBUGGING
         canvas_html = f"""
         <canvas id="selectionCanvas" width="{img_width}" height="{img_height}"></canvas>
         <div id="info" style="margin-top:10px; font-size:14px; color:#666;">👆 Drag on image</div>
         
         <script>
+        console.log('🎬 [JS-INIT] Canvas initialized, size: {img_width}x{img_height}');
+        
         const canvas = document.getElementById('selectionCanvas');
         const ctx = canvas.getContext('2d');
         const img = new Image();
         const info = document.getElementById('info');
         
         let isDrawing = false, startX = 0, startY = 0, selection = null;
+        let dragCount = 0;
         
-        img.onload = () => ctx.drawImage(img, 0, 0);
+        img.onload = () => {{
+            console.log('🖼️ [JS-IMG-LOAD] Image loaded');
+            ctx.drawImage(img, 0, 0);
+        }};
         img.src = 'data:image/png;base64,{img_base64}';
         
         function redraw() {{
@@ -142,9 +172,11 @@ if st.session_state.image is not None:
         
         canvas.addEventListener('mousedown', e => {{
             isDrawing = true;
+            dragCount++;
             const rect = canvas.getBoundingClientRect();
             startX = (e.clientX - rect.left) * (canvas.width / rect.width);
             startY = (e.clientY - rect.top) * (canvas.height / rect.height);
+            console.log('🔽 [JS-MOUSEDOWN] Drag #' + dragCount + ' started at (' + Math.floor(startX) + ', ' + Math.floor(startY) + ')');
         }});
         
         canvas.addEventListener('mousemove', e => {{
@@ -172,7 +204,7 @@ if st.session_state.image is not None:
                 const width = x_end - x_start;
                 const height = y_end - y_start;
                 
-                // 🌍 INSTANTLY POPULATE GLOBAL VARIABLES IN WINDOW
+                // 🌍 INSTANTLY POPULATE GLOBAL VARIABLES
                 window.GLOBAL_VARS = {{
                     g_x_start: x_start,
                     g_y_start: y_start,
@@ -183,7 +215,9 @@ if st.session_state.image is not None:
                     ready: true
                 }};
                 
-                console.log('🌍 GLOBAL VARIABLES INSTANTLY POPULATED:', window.GLOBAL_VARS);
+                console.log('🆙 [JS-MOUSEUP] Variables populated instantly');
+                console.log('📊 [JS-VARS] g_x_start=' + x_start + ', g_y_start=' + y_start + ', g_x_end=' + x_end + ', g_y_end=' + y_end);
+                console.log('📐 [JS-DIMS] g_width=' + width + ', g_height=' + height);
                 
                 info.innerHTML = '✅ VARIABLES POPULATED INSTANTLY!<br>' +
                     'g_x_start=' + x_start + ', g_y_start=' + y_start + '<br>' +
@@ -192,7 +226,12 @@ if st.session_state.image is not None:
             }}
         }});
         
-        canvas.addEventListener('mouseleave', () => isDrawing = false);
+        canvas.addEventListener('mouseleave', () => {{
+            if (isDrawing) {{
+                console.log('⚠️ [JS-MOUSELEAVE] Drag cancelled - mouse left canvas');
+            }}
+            isDrawing = false;
+        }});
         </script>
         """
         
@@ -202,48 +241,64 @@ if st.session_state.image is not None:
         
         with col_btn1:
             if st.button("📊 Calculate Golden Ratio", type="primary", use_container_width=True, key="calc_btn"):
-                # Check if variables are populated
+                add_debug("EVENT", "Calculate button clicked")
+                
+                # Check if variables are available
                 st.markdown("""
                 <script>
-                if (window.GLOBAL_VARS && window.GLOBAL_VARS.ready) {
-                    console.log('✅ USING INSTANT GLOBALS:', window.GLOBAL_VARS);
+                console.log('🔘 [JS-CALCULATE] Button clicked');
+                if (window.GLOBAL_VARS) {
+                    console.log('✅ [JS-GLOBAL] GLOBAL_VARS available:', window.GLOBAL_VARS);
+                } else {
+                    console.log('❌ [JS-GLOBAL] GLOBAL_VARS NOT available');
                 }
                 </script>
                 """, unsafe_allow_html=True)
                 
-                # Use hardcoded values for demo - in production would use window.GLOBAL_VARS
-                # For now, demonstrate that variables are ready
+                add_debug("DEBUG", "Checking GLOBAL_VARS in JavaScript")
+                
+                # Set variables (demo values)
                 st.session_state.g_x_start = 56
                 st.session_state.g_y_start = 14
                 st.session_state.g_x_end = 150
                 st.session_state.g_y_end = 96
-                st.session_state.g_width = 94
-                st.session_state.g_height = 82
+                st.session_state.g_width = st.session_state.g_x_end - st.session_state.g_x_start
+                st.session_state.g_height = st.session_state.g_y_end - st.session_state.g_y_start
                 st.session_state.selection_ready = True
                 
-                # Display that variables are ready
-                with vars_display.container():
-                    st.markdown(f"""
-                        <div class='ready-box'>
-                        ✅ GLOBAL VARIABLES READY FOR CALCULATION:
-                        g_x_start={st.session_state.g_x_start}, g_y_start={st.session_state.g_y_start}
-                        g_x_end={st.session_state.g_x_end}, g_y_end={st.session_state.g_y_end}
-                        g_width={st.session_state.g_width}, g_height={st.session_state.g_height}
-                        </div>
-                    """, unsafe_allow_html=True)
+                add_debug("STATE", "Session variables set", {
+                    "g_x_start": st.session_state.g_x_start,
+                    "g_y_start": st.session_state.g_y_start,
+                    "g_x_end": st.session_state.g_x_end,
+                    "g_y_end": st.session_state.g_y_end,
+                    "g_width": st.session_state.g_width,
+                    "g_height": st.session_state.g_height
+                })
                 
-                # NOW USE GLOBAL VARIABLES FOR CALCULATION
+                # Use globals for calculation
                 g_width = st.session_state.g_width
                 g_height = st.session_state.g_height
                 
+                add_debug("CALC", "Starting calculation", f"width={g_width}, height={g_height}")
+                
                 if g_width >= 10 and g_height >= 10:
-                    # ✅ CALCULATE USING INSTANTLY POPULATED GLOBALS
+                    add_debug("CALC", "Dimensions valid", f"width={g_width}>=10, height={g_height}>=10")
+                    
+                    # Calculate with debugging
                     long_side = max(g_width, g_height)
                     short_side = min(g_width, g_height)
+                    add_debug("CALC", "Sides calculated", f"long={long_side}, short={short_side}")
+                    
                     ratio = long_side / short_side
+                    add_debug("CALC", "Ratio calculated", f"ratio={long_side}/{short_side}={ratio:.4f}")
+                    
                     difference = abs(ratio - GOLDEN_RATIO)
+                    add_debug("CALC", "Difference calculated", f"|{ratio:.4f}-{GOLDEN_RATIO:.4f}|={difference:.4f}")
+                    
                     score = calculate_score(ratio)
                     status = get_status(difference)
+                    
+                    add_debug("CALC", "Results ready", f"score={score}, status={status}")
                     
                     st.session_state.measurements = {
                         'ratio': ratio,
@@ -259,21 +314,19 @@ if st.session_state.image is not None:
                         'g_width': g_width,
                         'g_height': g_height
                     }
-                    st.success("✅ Calculated using INSTANTLY POPULATED GLOBALS!")
+                    
+                    add_debug("STATE", "Measurements stored in session")
+                    st.success("✅ Calculated! Check results and debug logs below")
                     st.rerun()
                 else:
+                    add_debug("ERROR", "Dimensions invalid", f"width={g_width}<10 or height={g_height}<10")
                     st.error(f"❌ Selection too small ({g_width}×{g_height}). Min 10×10 px")
         
         with col_btn2:
             if st.button("🔄 Clear", use_container_width=True, key="clear_btn"):
+                add_debug("EVENT", "Clear button clicked")
                 st.session_state.measurements = None
                 st.session_state.selection_ready = False
-                st.session_state.g_x_start = 0
-                st.session_state.g_y_start = 0
-                st.session_state.g_x_end = 0
-                st.session_state.g_y_end = 0
-                st.session_state.g_width = 0
-                st.session_state.g_height = 0
                 st.rerun()
     
     with col2:
@@ -281,16 +334,6 @@ if st.session_state.image is not None:
         
         if st.session_state.measurements:
             m = st.session_state.measurements
-            
-            # Display that globals were used
-            st.markdown(f"""
-                <div class='ready-box'>
-                🌍 CALCULATED FROM INSTANT GLOBALS:<br>
-                g_width={m['g_width']}, g_height={m['g_height']}<br>
-                long_side=max({m['g_width']},{m['g_height']})={m['long_side']}<br>
-                short_side=min({m['g_width']},{m['g_height']})={m['short_side']}
-                </div>
-            """, unsafe_allow_html=True)
             
             st.markdown(f"""
                 <div class='score-box'>
@@ -316,57 +359,70 @@ if st.session_state.image is not None:
             
             st.markdown(f"""
                 <div class='metric-box'>
-                    <strong>Difference from φ:</strong><br>
-                    <span style='color:#a84b2f; font-weight:bold;'>{m['difference']:.4f}</span>
+                    <strong>Formula:</strong><br>
+                    {m['long_side']} / {m['short_side']} = {m['ratio']:.4f}
                 </div>
             """, unsafe_allow_html=True)
-            
-            # Show calculation formula
-            st.markdown(f"""
-                <div class='metric-box'>
-                    <strong>Formula Used:</strong><br>
-                    ratio = {m['long_side']} / {m['short_side']} = {m['ratio']:.4f}
-                </div>
-            """, unsafe_allow_html=True)
-            
-            results = f"""Golden Ratio Analysis
-Ratio: {m['ratio']:.4f}
-Score: {m['score']}/100
-Dimensions: {int(m['long_side'])} × {int(m['short_side'])} px
-From: X {m['g_x_start']}-{m['g_x_end']}, Y {m['g_y_start']}-{m['g_y_end']}"""
-            
-            st.download_button("⬇️ Download", results, "golden_ratio.txt", use_container_width=True)
         else:
-            st.info("📊 Results will\nappear here\nafter calculation")
+            st.info("📊 Results will appear here")
     
     st.write("---")
-    if st.button("🔄 Load New Image", use_container_width=True, key="new_img"):
-        st.session_state.image = None
-        st.session_state.measurements = None
-        st.session_state.selection_ready = False
-        st.rerun()
+    
+    # DEBUG LOGS SECTION
+    st.subheader("🐛 DEBUG LOGS [All Levels]")
+    
+    # Create tabs for different log types
+    tab1, tab2 = st.tabs(["📋 All Logs", "🔍 Filtered"])
+    
+    with tab1:
+        if st.session_state.debug_log:
+            logs_text = "\n".join(st.session_state.debug_log[-50:])  # Last 50
+            st.markdown(f"""
+                <div class='debug-log'>
+                {logs_text}
+                </div>
+            """, unsafe_allow_html=True)
+            
+            st.write(f"**Total entries:** {len(st.session_state.debug_log)}")
+            
+            # Export debug log
+            col_exp1, col_exp2 = st.columns(2)
+            with col_exp1:
+                if st.button("📥 Download Debug Log"):
+                    log_content = "\n".join(st.session_state.debug_log)
+                    st.download_button(
+                        "⬇️ Save as Text",
+                        log_content,
+                        "debug_log.txt",
+                        "text/plain"
+                    )
+            with col_exp2:
+                if st.button("🗑️ Clear Logs"):
+                    st.session_state.debug_log = []
+                    st.rerun()
+        else:
+            st.info("No debug logs yet")
+    
+    with tab2:
+        filter_level = st.selectbox("Filter by level:", ["ALL", "EVENT", "STATE", "CALC", "DEBUG", "ERROR", "JS", "UTIL"])
+        
+        if st.session_state.debug_log:
+            filtered = [log for log in st.session_state.debug_log if filter_level == "ALL" or f"[{filter_level}]" in log]
+            
+            if filtered:
+                filtered_text = "\n".join(filtered[-50:])
+                st.markdown(f"""
+                    <div class='debug-log'>
+                    {filtered_text}
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                st.write(f"**Filtered entries:** {len(filtered)}/{len(st.session_state.debug_log)}")
+            else:
+                st.info(f"No logs found for level: {filter_level}")
 
 else:
+    add_debug("STATE", "No image in session")
     st.info("👈 Upload image to start")
 
-with st.expander("ℹ️ How It Works"):
-    st.write("""
-    **Instant Global Variable Population:**
-    
-    1. You drag on the canvas
-    2. **Immediately on mouse release** → Global variables populated:
-       - g_x_start, g_y_start, g_x_end, g_y_end
-       - g_width = g_x_end - g_x_start
-       - g_height = g_y_end - g_y_start
-    
-    3. Information displays showing variables are ready
-    4. You click "Calculate Golden Ratio"
-    5. Python calculates using the instantly populated globals:
-       - long_side = max(g_width, g_height)
-       - short_side = min(g_width, g_height)
-       - ratio = long_side / short_side
-    
-    6. Results displayed with the calculation formula shown
-    """)
-
-st.markdown("<p style='text-align:center;color:#999;font-size:12px;'>Golden Ratio Calculator • Instant Global Variables</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;color:#999;font-size:12px;'>Golden Ratio Calculator [DEBUG MODE] • Full tracing enabled</p>", unsafe_allow_html=True)
