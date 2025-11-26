@@ -202,6 +202,13 @@ if st.session_state.image is not None:
                     'X: ' + x_start + ' to ' + x_end + '<br>' +
                     'Y: ' + y_start + ' to ' + y_end + '<br>' +
                     'Size: ' + width + ' × ' + height + ' pixels';
+                    SELECTION_X_START=x_start;
+                    SELECTION_Y_START = y_start;
+                    SELECTION_X_END = x_end;
+                    SELECTION_Y_END = y_end;
+                    SELECTION_WIDTH = x_end-x_start;
+                    SELECTION_HEIGHT = y_end-y_start;
+
                     
                 console.log('Global selection updated:', window.GLOBAL_SELECTION);
             }}
