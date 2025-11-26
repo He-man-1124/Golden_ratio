@@ -238,10 +238,10 @@ if st.session_state.image is not None:
                 
                 # For now, use a workaround - in production, these would come from JS
                 # Setting default values for demonstration
-                st.session_state.g_x_start = 56
-                st.session_state.g_y_start = 14
-                st.session_state.g_x_end = 150
-                st.session_state.g_y_end = 96
+                st.session_state.g_x_start = SELECTION_X_START
+                st.session_state.g_y_start = SELECTION_Y_START
+                st.session_state.g_x_end = SELECTION_X_END
+                st.session_state.g_y_end = SELECTION_Y_END
                 st.session_state.g_width = st.session_state.g_x_end - st.session_state.g_x_start
                 st.session_state.g_height = st.session_state.g_y_end - st.session_state.g_y_start
                 
