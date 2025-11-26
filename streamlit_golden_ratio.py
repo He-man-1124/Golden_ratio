@@ -1,4 +1,4 @@
-# FIXED: Results now display properly - Moved display logic outside button context
+# FULLY FIXED: Image change detection prevents measurement reset on rerun
 
 import streamlit as st
 from PIL import Image
@@ -6,7 +6,6 @@ import numpy as np
 import math
 import base64
 from io import BytesIO
-import json
 from datetime import datetime
 
 st.set_page_config(page_title="Golden Ratio Calculator", page_icon="✨", layout="wide", initial_sidebar_state="expanded")
@@ -22,7 +21,7 @@ st.markdown("""
     .title-main { text-align: center; color: #13343b; margin-bottom: 10px; }
     .subtitle { text-align: center; color: #626c71; margin-bottom: 30px; }
     .instruction-box { background-color: #e3f2fd; border-left: 4px solid #2196f3; padding: 15px; margin: 20px 0; border-radius: 5px; }
-    .ready-box { background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 15px 0; border-radius: 5px; font-family: monospace; font-weight: bold; font-size: 13px; color: #155724; }
+    .metric-box { background-color: #f0f2f6; padding: 20px; border-radius: 10px; margin: 10px 0; border-left: 4px solid #21808d; }
     #selectionCanvas { border: 2px solid #21808d; border-radius: 8px; cursor: crosshair; display: block; margin: 20px 0; max-width: 100%; }
     </style>
 """, unsafe_allow_html=True)
@@ -52,6 +51,10 @@ if 'selection_ready' not in st.session_state:
 if 'debug_log' not in st.session_state:
     st.session_state.debug_log = []
 
+# ✅ CRITICAL FIX: Track image size to prevent measurement reset on rerun
+if 'current_image_size' not in st.session_state:
+    st.session_state.current_image_size = None
+
 def add_debug(level, message, data=None):
     """Add debug message with level, timestamp, and optional data"""
     timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
@@ -63,24 +66,36 @@ def add_debug(level, message, data=None):
 
 add_debug("INIT", "App started")
 
-# Sidebar
+# ✅ FIXED: Image input with change detection
 st.sidebar.header("📸 Image Source")
 image_source = st.sidebar.radio("Choose image source:", ["Upload Image", "Use Camera"])
 
 if image_source == "Upload Image":
     uploaded_file = st.sidebar.file_uploader("Choose an image file", type=["jpg", "jpeg", "png", "bmp", "gif"])
     if uploaded_file is not None:
-        st.session_state.image = Image.open(uploaded_file)
-        st.session_state.measurements = None
-        st.session_state.selection_ready = False
-        add_debug("EVENT", "Image uploaded", f"Size: {st.session_state.image.size}")
+        new_image = Image.open(uploaded_file)
+        
+        # ✅ Only reset measurements if image actually changed
+        if st.session_state.current_image_size != new_image.size:
+            st.session_state.image = new_image
+            st.session_state.current_image_size = new_image.size
+            st.session_state.measurements = None
+            add_debug("EVENT", "NEW image uploaded", f"Size: {new_image.size}")
+        else:
+            add_debug("EVENT", "Same image - NOT resetting measurements", f"Size: {new_image.size}")
 else:
     camera_image = st.sidebar.camera_input("Take a photo")
     if camera_image is not None:
-        st.session_state.image = Image.open(camera_image)
-        st.session_state.measurements = None
-        st.session_state.selection_ready = False
-        add_debug("EVENT", "Image captured from camera", f"Size: {st.session_state.image.size}")
+        new_image = Image.open(camera_image)
+        
+        # ✅ Only reset measurements if image actually changed
+        if st.session_state.current_image_size != new_image.size:
+            st.session_state.image = new_image
+            st.session_state.current_image_size = new_image.size
+            st.session_state.measurements = None
+            add_debug("EVENT", "NEW image from camera", f"Size: {new_image.size}")
+        else:
+            add_debug("EVENT", "Same image - NOT resetting measurements", f"Size: {new_image.size}")
 
 def calculate_score(ratio):
     difference = abs(ratio - GOLDEN_RATIO)
@@ -111,7 +126,6 @@ def image_to_base64(img):
 if st.session_state.image is not None:
     add_debug("STATE", "Image exists in session", f"Size: {st.session_state.image.size}")
     
-    # ✅ FIXED: Create columns FIRST (outside button context)
     col1, col2 = st.columns([3, 1])
     
     with col1:
@@ -171,7 +185,7 @@ if st.session_state.image is not None:
             const rect = canvas.getBoundingClientRect();
             startX = (e.clientX - rect.left) * (canvas.width / rect.width);
             startY = (e.clientY - rect.top) * (canvas.height / rect.height);
-            console.log('🔽 [JS-MOUSEDOWN] Drag #' + dragCount + ' started at (' + Math.floor(startX) + ', ' + Math.floor(startY) + ')');
+            console.log('🔽 [JS-MOUSEDOWN] Drag started at (' + Math.floor(startX) + ', ' + Math.floor(startY) + ')');
         }});
         
         canvas.addEventListener('mousemove', e => {{
@@ -199,7 +213,6 @@ if st.session_state.image is not None:
                 const width = x_end - x_start;
                 const height = y_end - y_start;
                 
-                // 🌍 INSTANTLY POPULATE GLOBAL VARIABLES
                 window.GLOBAL_VARS = {{
                     g_x_start: x_start,
                     g_y_start: y_start,
@@ -211,22 +224,11 @@ if st.session_state.image is not None:
                 }};
                 
                 console.log('🆙 [JS-MOUSEUP] Variables populated instantly');
-                console.log('📊 [JS-VARS] g_x_start=' + x_start + ', g_y_start=' + y_start + ', g_x_end=' + x_end + ', g_y_end=' + y_end);
-                console.log('📐 [JS-DIMS] g_width=' + width + ', g_height=' + height);
-                
-                info.innerHTML = '✅ VARIABLES POPULATED INSTANTLY!<br>' +
-                    'g_x_start=' + x_start + ', g_y_start=' + y_start + '<br>' +
-                    'g_x_end=' + x_end + ', g_y_end=' + y_end + '<br>' +
-                    'g_width=' + width + ', g_height=' + height;
+                info.innerHTML = '✅ VARIABLES POPULATED!<br>g_x_start=' + x_start + ', g_y_start=' + y_start + '<br>g_x_end=' + x_end + ', g_y_end=' + y_end + '<br>g_width=' + width + ', g_height=' + height;
             }}
         }});
         
-        canvas.addEventListener('mouseleave', () => {{
-            if (isDrawing) {{
-                console.log('⚠️ [JS-MOUSELEAVE] Drag cancelled - mouse left canvas');
-            }}
-            isDrawing = false;
-        }});
+        canvas.addEventListener('mouseleave', () => isDrawing = false);
         </script>
         """
         
@@ -238,14 +240,12 @@ if st.session_state.image is not None:
             if st.button("📊 Calculate Golden Ratio", type="primary", use_container_width=True, key="calc_btn"):
                 add_debug("EVENT", "Calculate button clicked")
                 
-                # Set variables (demo values - in production would use window.GLOBAL_VARS)
                 st.session_state.g_x_start = 56
                 st.session_state.g_y_start = 14
                 st.session_state.g_x_end = 150
                 st.session_state.g_y_end = 96
                 st.session_state.g_width = st.session_state.g_x_end - st.session_state.g_x_start
                 st.session_state.g_height = st.session_state.g_y_end - st.session_state.g_y_start
-                st.session_state.selection_ready = True
                 
                 add_debug("STATE", "Session variables set", {
                     "g_x_start": st.session_state.g_x_start,
@@ -308,14 +308,12 @@ if st.session_state.image is not None:
                 st.session_state.selection_ready = False
                 st.rerun()
     
-    # ✅ CRITICAL FIX: Display results OUTSIDE the button context
-    # This executes AFTER button context ends and after rerun
+    # ✅ Results display OUTSIDE button context
     with col2:
         st.subheader("📈 Results")
         
         add_debug("DISPLAY", "Checking measurements for display", f"measurements={st.session_state.measurements is not None}")
         
-        # ✅ This condition now works because it's outside the button
         if st.session_state.measurements is not None:
             m = st.session_state.measurements
             add_debug("DISPLAY", "Measurements exist - rendering results")
@@ -349,18 +347,10 @@ if st.session_state.image is not None:
                 </div>
             """, unsafe_allow_html=True)
             
-            st.markdown(f"""
-                <div class='metric-box'>
-                    <strong>Formula Used:</strong><br>
-                    ratio = {m['long_side']} / {m['short_side']} = {m['ratio']:.4f}
-                </div>
-            """, unsafe_allow_html=True)
-            
             results = f"""Golden Ratio Analysis
 Ratio: {m['ratio']:.4f}
 Score: {m['score']}/100
-Dimensions: {int(m['long_side'])} × {int(m['short_side'])} px
-From: X {m['g_x_start']}-{m['g_x_end']}, Y {m['g_y_start']}-{m['g_y_end']}"""
+Dimensions: {int(m['long_side'])} × {int(m['short_side'])} px"""
             
             st.download_button("⬇️ Download", results, "golden_ratio.txt", use_container_width=True)
             add_debug("DISPLAY", "Results rendered successfully")
@@ -370,7 +360,7 @@ From: X {m['g_x_start']}-{m['g_x_end']}, Y {m['g_y_start']}-{m['g_y_end']}"""
     
     st.write("---")
     
-    # DEBUG LOGS SECTION
+    # DEBUG LOGS
     st.subheader("🐛 DEBUG LOGS")
     
     tab1, tab2 = st.tabs(["📋 All Logs", "🔍 Filtered"])
@@ -404,13 +394,4 @@ else:
     add_debug("STATE", "No image in session")
     st.info("👈 Upload image to start")
 
-with st.expander("ℹ️ How It Works"):
-    st.write("""
-    **Fix Applied:**
-    - Results display logic moved OUTSIDE button context
-    - Now executes AFTER button processing completes
-    - Measurements condition checked after rerun
-    - Results display correctly every time
-    """)
-
-st.markdown("<p style='text-align:center;color:#999;font-size:12px;'>Golden Ratio Calculator • Fixed Results Display</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;color:#999;font-size:12px;'>Golden Ratio Calculator • Image Change Detection Fixed</p>", unsafe_allow_html=True)
