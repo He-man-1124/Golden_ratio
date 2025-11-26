@@ -1,4 +1,4 @@
-# Golden Ratio Calculator - Streamlit with Interactive Plotly Selection (FIXED)
+# Golden Ratio Calculator - Streamlit with Interactive Plotly Selection (FINAL)
 # Works perfectly! Drag box on image to select area
 
 import streamlit as st
@@ -122,8 +122,7 @@ if st.session_state.image is not None:
             1. Click and drag on the image to draw a selection box<br>
             2. The blue rectangle shows your selection<br>
             3. Release to finalize the selection<br>
-            4. Coordinates appear automatically<br>
-            5. Click "📊 Calculate" to measure
+            4. Click "📊 Calculate" to measure
             </div>
         """, unsafe_allow_html=True)
         
@@ -143,7 +142,7 @@ if st.session_state.image is not None:
             hovertemplate="<b>Pixel coordinates</b><br>X: %{x}<br>Y: %{y}<extra></extra>"
         ))
         
-        # Update layout for interactive selection - FIXED: selectdirection='d'
+        # Update layout for interactive selection
         fig.update_layout(
             title=None,
             xaxis=dict(
@@ -157,18 +156,18 @@ if st.session_state.image is not None:
                 showgrid=False,
             ),
             hovermode="closest",
-            dragmode="select",  # Enable selection mode
-            selectdirection="d",  # FIXED: 'd' for diagonal instead of 'diagonal'
+            dragmode="select",
+            selectdirection="d",
             width=img_width if img_width < 1200 else 1200,
             height=img_height if img_height < 800 else 800,
             margin=dict(l=0, r=0, t=0, b=0),
         )
         
-        # Display figure and get selection
+        # Display figure
         selected_points = st.plotly_chart(fig, use_container_width=True, key="image_selection")
         
-        # Input fields for manual adjustment
-        st.write("**Or manually enter coordinates:**")
+        # Input fields for selection coordinates
+        st.write("**Selection Coordinates:**")
         
         col_inputs = st.columns(4)
         with col_inputs[0]:
@@ -180,7 +179,7 @@ if st.session_state.image is not None:
         with col_inputs[3]:
             y_end = st.number_input("Y End", min_value=0, max_value=img_height, value=min(100, img_height), step=10)
         
-        st.write(f"**Selection:** ({int(x_start)}, {int(y_start)}) to ({int(x_end)}, {int(y_end)})")
+        st.write(f"**Selected Area:** ({int(x_start)}, {int(y_start)}) to ({int(x_end)}, {int(y_end)})")
         
         # Calculate button
         if st.button("📊 Calculate Golden Ratio", type="primary", use_container_width=True):
@@ -281,7 +280,7 @@ Status: {m['status']}
                 use_container_width=True
             )
         else:
-            st.info("📊 Use manual inputs or\nclick Calculate to measure")
+            st.info("📊 Draw a selection and\nclick Calculate to see results")
     
     # Reset button
     st.write("---")
