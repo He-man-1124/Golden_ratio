@@ -4,3 +4,4 @@ opencv-python-headless
 numpy
 streamlit-drawable-canvas
 plotly
+streamlit-js-eval
