@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 from io import BytesIO
 import math
+To update, run: pip install --upgrade pip
 
 # Set page configuration
 st.set_page_config(
